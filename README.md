@@ -1,0 +1,83 @@
+# Stepwise
+
+**The player that waits for you.** A Video.js v10 skin for follow-along video: recipes, repairs, lessons, workouts.
+
+Most video is watched. Some of it is followed, by someone whose hands and eyes are busy with the thing being taught. Every player makes that person stop what they are doing to drag a thin bar back a few seconds. Stepwise puts the pause where it is wanted.
+
+- **Chapters are steps.** The seek bar has one segment per step, each with its number.
+- **It waits.** When a step ends the video holds on that step's last frame, the finished result, and offers two large buttons: *Repeat* and *Next step*. Nothing moves until the viewer chooses. The space bar and the play button carry on too.
+- **You always know where you are.** A tag in the corner shows the step number and title. With the controls hidden it folds down to the number, and a hairline along the bottom keeps the place.
+- **It is still an ordinary player.** A switch turns the waiting off. A video with no chapters gets none of the step controls.
+
+Built for the [Video.js Skins Design Challenge](https://contra.com/community/topic/videojsskinschallenge). Apache-2.0.
+
+## Use it
+
+Stepwise reads the first `chapters` text track on the media. Give the video a WebVTT file with one cue per step:
+
+```html
+<video-player content-title="Fold a paper boat">
+  <!-- the contents of src/video/skin.html, with the media in place of its comment -->
+  <video src="boat.mp4" playsinline>
+    <track kind="chapters" srclang="en" src="boat-steps.vtt" default />
+  </video>
+</video-player>
+```
+
+```
+WEBVTT
+
+00:00.000 --> 00:07.000
+Gather what you need
+
+00:07.000 --> 00:15.500
+Fold the corners in
+```
+
+`<stepwise-steps wait="off">` starts with waiting switched off. The viewer's own choice is remembered on their device.
+
+## Keys
+
+| Key | Does |
+| --- | --- |
+| Space, K | Play or pause; during a wait, go on to the next step |
+| N | Next step |
+| B | Back to the start of this step, or to the step before if this one has only just begun |
+| R | Repeat this step |
+| W | Turn waiting on or off |
+| ← → J L | Seek |
+| ↑ ↓, M | Volume, mute |
+| C, F, I | Captions, full screen, picture in picture |
+| 0–9, Home, End | Jump to a tenth of the video, the start, the end |
+
+## Design notes
+
+- **One accent, one job.** Green means progress and the way forward: the filled segments, the step number, *Next step*. Play is solid white. Everything else is line work on a dark plate.
+- **Readable over any frame.** The plate's colour carries the transparency; text and icons are opaque. The idle hairline is dark-edged so it holds over white footage.
+- **State by shape as well as colour.** The switch moves its knob, the segment under the pointer thickens, the tag changes its number.
+- **Concentric corners.** A plate's radius is its control radius plus its padding.
+- **Tabular numerals** in the time, the tag and the plate, so nothing shifts as numbers change.
+- **Small players.** Under 480 px the numbers leave the segments, *Back a step* leaves the bar (Repeat and B remain), and Repeat becomes a square button. Under 384 px the time shows elapsed only and the tag steps aside while the plate is up.
+- **Preferences.** Reduced motion removes slides and scales. Reduced transparency and more contrast make plates solid and outlined. Forced colours use system colours throughout.
+- **Public knobs.** `--media-accent-color`, `--media-accent-text-color`, `--media-border-radius`, `--media-font-family`, `--media-object-fit`, `--media-object-position`.
+
+## Files
+
+- `src/video/skin.html`: the template. Stock Video.js v10 components plus the step parts.
+- `src/video/skin.css`: Stepwise's styles.
+- `src/video/stepwise-steps.ts`: `<stepwise-steps>`, which reads the chapters, runs the wait, and drives the tag, the plate and the hairline. It draws nothing itself; it wires up the parts marked `data-step="…"`.
+- `src/video/icons.ts`: the Stepwise icon family.
+- `src/video/scaffold-base.css`, `src/styles/`: the Scaffold behaviours and tokens the skin inherits.
+- `apps/preview/`: the landing page, the bare player and the official workbench.
+
+## Run it
+
+```
+npm ci
+npm run dev        # landing page at /, bare player at /preview.html, workbench at /workbench.html
+npm run build
+```
+
+`/preview.html?media=demo` plays a small bundled clip with five steps; `?media=plain` plays it with no chapters.
+
+Scaffolded from the official `@videojs/cli` skin workbench (Video.js 10.3.0, HTML + CSS, Scaffold base, video preset).

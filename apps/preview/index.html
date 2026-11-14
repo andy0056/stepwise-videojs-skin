@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stepwise — a Video.js v10 skin that waits for you</title>
+    <meta name="description" content="Stepwise is a Video.js v10 skin for follow-along video. Chapters become steps, and at the end of each step the player waits until you are ready." />
+    <meta property="og:title" content="Stepwise — the player that waits for you" />
+    <meta property="og:description" content="A Video.js v10 skin for recipes, repairs, lessons and workouts. One segment per step; the video holds at the end of each until you say go." />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23181b14'/%3E%3Crect x='5' y='13' width='6' height='6' rx='2' fill='%23c5f044'/%3E%3Crect x='13' y='13' width='6' height='6' rx='2' fill='%23c5f044'/%3E%3Crect x='21' y='13' width='6' height='6' rx='2' fill='%23777c6c'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">Video.js v10 skin</p>
+        <h1>Stepwise</h1>
+        <p class="lede">The player that waits for you.</p>
+      </header>
+
+      <section class="stage-wrap" aria-label="Stepwise demo player">
+        <div id="stage" class="stage"></div>
+        <div class="sizes" role="group" aria-label="Player width">
+          <button type="button" class="size" data-w="960" aria-pressed="true">Wide</button>
+          <button type="button" class="size" data-w="640" aria-pressed="false">Medium</button>
+          <button type="button" class="size" data-w="375" aria-pressed="false">Phone</button>
+        </div>
+        <p class="credit" id="credit"></p>
+      </section>
+
+      <section class="steps" aria-labelledby="try">
+        <h2 id="try">Three things to try</h2>
+        <ol>
+          <li><b>Press play and let a step finish.</b> The video stops on the step's last frame. Nothing moves until you choose <i>Next step</i> or <i>Repeat</i>.</li>
+          <li><b>Keep your hands where they are.</b> The two buttons are 64 pixels tall, and the space bar also carries on. <kbd>N</kbd> next, <kbd>B</kbd> back, <kbd>R</kbd> repeat.</li>
+          <li><b>Turn <i>Wait</i> off.</b> The same video plays straight through, and the step number stays in the corner so you still know where you are.</li>
+        </ol>
+      </section>
+
+      <section class="essay" aria-labelledby="why">
+        <h2 id="why">Why</h2>
+        <p>Most video is watched. Some of it is followed: a recipe, a repair, a knot, a stretch. Following means the viewer is doing something else with their hands and their eyes, and every player makes them stop that to chase a thin bar backwards by a few seconds.</p>
+        <p>Stepwise moves the pause to where it is wanted. A video's chapters are its steps. Each step is one segment of the seek bar with its number on it, and when a step ends the player holds its last frame, the finished result, for as long as the viewer needs.</p>
+        <p>It is still a player for someone else's site. Play, seek, time, volume, captions and full screen are where people expect them. A video with no chapters gets none of the step controls and plays as usual.</p>
+      </section>
+
+      <section class="craft" aria-labelledby="craft">
+        <h2 id="craft">Details</h2>
+        <ul>
+          <li><b>Readable over any frame.</b> Controls sit on a dark plate whose colour carries the transparency; text and icons stay opaque. The idle hairline is dark-edged, so it holds over white footage too.</li>
+          <li><b>State by shape, not colour alone.</b> The switch moves its knob, the current segment thickens, and the step tag changes its number.</li>
+          <li><b>Keyboard.</b> Every control is reachable, focus is always outlined, and when the wait plate appears focus lands on <i>Next step</i> if you were already in the player.</li>
+          <li><b>Calm on request.</b> Reduced motion removes the slides and scales. Reduced transparency and more contrast make every plate solid. Forced colours use the system palette.</li>
+          <li><b>Small players.</b> Under 480 px the numbers leave the segments, <i>Back a step</i> folds into <i>Repeat</i>, and the plate's buttons take the full width.</li>
+          <li><b>Public knobs.</b> <code>--media-accent-color</code>, <code>--media-accent-text-color</code>, <code>--media-border-radius</code> and <code>--media-font-family</code> work as they do on the packaged skins.</li>
+        </ul>
+      </section>
+
+      <footer class="foot">
+        <p>Stepwise is an entry in the <a href="https://contra.com/community/topic/videojsskinschallenge">Video.js Skins Design Challenge</a>. Built on Video.js 10 components; the one new part is <code>&lt;stepwise-steps&gt;</code>. <a href="./preview.html">Bare player</a> · <a href="./workbench.html">Workbench</a></p>
+      </footer>
+    </main>
+    <script type="module" src="/src/landing/main.ts"></script>
+  </body>
+</html>

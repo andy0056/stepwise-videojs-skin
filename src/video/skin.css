@@ -1,0 +1,834 @@
+/* =============================================================================
+   Stepwise — Video.js v10 skin
+   "The player that waits for you."
+   For follow-along video: recipes, repairs, lessons, workouts. Chapters are steps; the seek bar has
+   one segment per step; at the end of a step the video holds until the viewer is ready.
+
+   Layered on scaffold-base.css (component behaviours) and the shared tokens in src/styles.
+   Public knobs (the same as the packaged skins):
+     --media-accent-color, --media-accent-text-color, --media-border-radius,
+     --media-font-family, --media-object-fit, --media-object-position
+   Parts: the step tag (.sw-tag), the dock (.sw-dock) holding the intro, the wait plate (.sw-wait)
+   and the bar (.sw-bar), and the hairline (.sw-hairline). <stepwise-steps> drives them.
+   ============================================================================= */
+
+@layer stepwise {
+  .stepwise {
+    /* Read through a private name, so a site can set --media-font-family on the player or around it. */
+    --sw-font: var(--media-font-family, "Figtree Variable", Figtree, ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+
+    /* Accent: the green of "go". Used for progress and for the way forward, nothing else. */
+    --media-default-accent-color: oklch(90% 0.2 128);
+    --media-accent-foreground: var(--media-accent-text-color, oklch(21% 0.06 128));
+    --media-primary-foreground: var(--media-accent-text-color, oklch(21% 0.06 128));
+
+    /* Surfaces: the colour carries the transparency; text and icons stay opaque. */
+    --sw-plate: oklch(17% 0.01 128 / 0.82);
+    --sw-plate-solid: oklch(17% 0.01 128);
+    --sw-blur: blur(18px) saturate(150%);
+    --sw-edge: calc(var(--media-spacing) * 3);                /* 12px from the frame */
+    --sw-pad: calc(var(--media-spacing) * 2);                 /* 8px inside a plate */
+    --sw-radius: calc(var(--media-spacing) * 3);              /* 12px control radius */
+    --sw-plate-radius: calc(var(--sw-radius) + var(--sw-pad)); /* outer = inner + padding */
+    --sw-button: calc(var(--media-spacing) * 10);             /* 40px */
+
+    --sw-fg: var(--media-foreground);
+    --sw-fg-muted: color-mix(in oklab, var(--media-foreground) 70%, transparent);
+    --sw-rest: color-mix(in oklab, var(--media-foreground) 30%, transparent);
+    --sw-hover: color-mix(in oklab, var(--media-foreground) 14%, transparent);
+    --sw-accent: var(--media-primary);
+    --sw-on-accent: var(--media-primary-foreground);
+    --sw-icon-knockout: var(--sw-plate-solid);
+
+    --media-muted: var(--sw-hover);
+    --media-control-radius: var(--sw-radius);
+    --media-popup-radius: calc(var(--media-spacing) * 4);
+    --media-menu-item-radius: calc(var(--media-spacing) * 2.5);
+    --media-video-border-radius: var(--media-border-radius, calc(var(--media-spacing) * 4));
+    --media-ring: var(--sw-accent);
+  }
+
+  /* ---------------------------------------------------------------- frame */
+  .stepwise.media-container {
+    border-radius: var(--media-video-border-radius);
+    background: #000;
+    font-family: var(--sw-font);
+  }
+  .stepwise.media-container:focus-visible {
+    outline: 2px solid var(--media-ring);
+    outline-offset: -2px;
+  }
+  .stepwise > video,
+  .stepwise > audio,
+  .stepwise > [slot="media"] {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: var(--media-object-fit, contain);
+    object-position: var(--media-object-position, center);
+  }
+  .stepwise .video-controls-bottom,
+  .stepwise .video-controls-center { display: none !important; }
+
+  /* Native captions sit above the bar while it is up. */
+  .stepwise[data-controls-visible] { --media-caption-controls-y: calc(var(--media-spacing) * -27); }
+
+  .stepwise .sw-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .stepwise .sw-steps { display: none; }
+
+  /* ---------------------------------------------------------------- backdrop */
+  .stepwise .sw-backdrop {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(to top,
+      color-mix(in oklab, var(--media-backdrop) 46%, transparent),
+      color-mix(in oklab, var(--media-backdrop) 16%, transparent) 34%,
+      transparent 60%);
+    transition: opacity var(--media-duration-controls) ease;
+  }
+  .stepwise .sw-backdrop:not([data-visible]) { opacity: 0; }
+
+  /* ---------------------------------------------------------------- buttons */
+  .stepwise .media-button {
+    width: var(--sw-button);
+    height: var(--sw-button);
+    border-radius: var(--sw-radius);
+    color: var(--sw-fg);
+    background: transparent;
+    border: 0;
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    font: inherit;
+    transition: background-color var(--media-duration) ease, color var(--media-duration) ease, scale var(--media-duration-fast) ease;
+  }
+  @media (hover: hover) {
+    .stepwise .media-button:hover { background: var(--sw-hover); }
+  }
+  .stepwise .media-button[aria-expanded="true"] { background: var(--sw-hover); }
+  .stepwise .media-button:active { scale: 0.94; }
+  .stepwise .media-button:focus-visible,
+  .stepwise .sw-switch:focus-visible,
+  .stepwise .sw-wait-button:focus-visible {
+    outline: 2px solid var(--media-ring);
+    outline-offset: 2px;
+  }
+  .stepwise .media-button > media-icon,
+  .stepwise .media-button .media-button-icon,
+  .stepwise .media-button .media-button-icon-base {
+    width: calc(var(--media-spacing) * 5);
+    height: calc(var(--media-spacing) * 5);
+  }
+  .stepwise .media-button[hidden],
+  .stepwise .media-button[data-hidden],
+  .stepwise .media-button[data-availability="unavailable"],
+  .stepwise .media-button[data-availability="unsupported"] { display: none; }
+  .stepwise .media-button:disabled { opacity: 0.38; cursor: default; }
+
+  /* Play is the one solid button in the bar. The triangle sits right of centre to look centred. */
+  .stepwise .sw-play {
+    width: calc(var(--media-spacing) * 13);
+    background: var(--sw-fg);
+    color: var(--sw-plate-solid);
+    margin-inline: calc(var(--media-spacing) * 0.5);
+  }
+  @media (hover: hover) {
+    .stepwise .sw-play:hover { background: color-mix(in oklab, var(--sw-fg) 86%, var(--sw-accent)); }
+  }
+  .stepwise .media-play-button .media-play-button-play-icon { translate: 1px 0; }
+
+  /* ---------------------------------------------------------------- centre play */
+  .stepwise .sw-center {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+  .stepwise .sw-center .media-button {
+    pointer-events: auto;
+    width: calc(var(--media-spacing) * 19);
+    height: calc(var(--media-spacing) * 19);
+    border-radius: 50%;
+    background: var(--sw-accent);
+    color: var(--sw-on-accent);
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--sw-plate-solid) 55%, transparent), 0 12px 32px -8px oklch(0% 0 0 / 0.6);
+    transition: opacity var(--media-duration-slow) ease, scale var(--media-duration-slow) ease;
+  }
+  @media (hover: hover) {
+    .stepwise .sw-center .media-button:hover { background: var(--sw-accent); scale: 1.05; }
+  }
+  .stepwise .sw-center .media-button > media-icon { width: calc(var(--media-spacing) * 8); height: calc(var(--media-spacing) * 8); }
+  .stepwise .sw-center .media-button .media-play-button-play-icon { translate: 2px 0; }
+  .stepwise .sw-center .media-button[data-started]:not([data-ended]),
+  .stepwise[data-steps] .sw-center .media-button[data-ended] {
+    opacity: 0;
+    scale: 0.8;
+    pointer-events: none;
+    visibility: hidden; /* out of the tab order once it has gone */
+    transition: opacity var(--media-duration-slow) ease, scale var(--media-duration-slow) ease, visibility 0s linear var(--media-duration-slow);
+  }
+
+  /* ---------------------------------------------------------------- top right */
+  .stepwise .sw-top {
+    position: absolute;
+    inset-inline-end: var(--sw-edge);
+    top: var(--sw-edge);
+    display: flex;
+    gap: var(--media-spacing);
+    pointer-events: auto;
+    transition: opacity var(--media-duration-controls) ease, translate var(--media-duration-controls) ease;
+  }
+  .stepwise .sw-content:not([data-visible]) .sw-top {
+    opacity: 0;
+    translate: 0 -8px;
+    pointer-events: none;
+  }
+  .stepwise .sw-top .media-button {
+    background: var(--sw-plate);
+    -webkit-backdrop-filter: var(--sw-blur);
+    backdrop-filter: var(--sw-blur);
+  }
+  @media (hover: hover) {
+    .stepwise .sw-top .media-button:hover { background: var(--sw-plate-solid); }
+  }
+
+  /* ---------------------------------------------------------------- step tag */
+  /* Number in the accent block, title beside it. It stays up while the video plays: with the controls
+     away it folds down to the number, and opens again for a moment whenever a new step begins. */
+  .stepwise :is(.sw-tag, .sw-intro) {
+    position: absolute;
+    inset-inline-start: var(--sw-edge);
+    top: var(--sw-edge);
+    display: none;
+    align-items: center;
+    box-sizing: border-box;
+    max-width: calc(100% - var(--sw-edge) * 2 - var(--media-spacing) * 24);
+    padding: var(--media-spacing);
+    border-radius: calc(var(--media-spacing) * 3.5);
+    background: var(--sw-plate);
+    -webkit-backdrop-filter: var(--sw-blur);
+    backdrop-filter: var(--sw-blur);
+    color: var(--sw-fg);
+    pointer-events: none;
+  }
+  .stepwise[data-steps][data-step-started] .sw-tag { display: inline-flex; }
+  .stepwise:not([data-step-started]) .sw-intro { display: inline-flex; }
+  .stepwise :is(.sw-tag-count, .sw-intro-count) {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: center;
+    flex: none;
+    min-width: calc(var(--media-spacing) * 8);
+    height: calc(var(--media-spacing) * 8);
+    box-sizing: border-box;
+    padding-inline: calc(var(--media-spacing) * 2);
+    border-radius: calc(var(--media-spacing) * 2.5);
+    background: var(--sw-accent);
+    color: var(--sw-on-accent);
+    font-variant-numeric: tabular-nums;
+    line-height: calc(var(--media-spacing) * 8);
+  }
+  /* Before the first play: how many steps, what it is, how long it runs. */
+  .stepwise .sw-intro-count { font-size: calc(var(--media-spacing) * 3.5); font-weight: 800; padding-inline: calc(var(--media-spacing) * 2.5); }
+  .stepwise .sw-intro-count:empty { display: none; }
+  .stepwise .sw-title {
+    min-width: 0;
+    padding-inline: calc(var(--media-spacing) * 2.5) calc(var(--media-spacing) * 2);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: calc(var(--media-spacing) * 3.75);
+    font-weight: 650;
+  }
+  .stepwise .sw-title:empty { display: none; }
+  .stepwise .sw-summary {
+    flex: none;
+    padding-inline: calc(var(--media-spacing) * 1) calc(var(--media-spacing) * 2.5);
+    font-size: calc(var(--media-spacing) * 3.25);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--sw-fg-muted);
+  }
+  .stepwise .sw-summary:empty { display: none; }
+  .stepwise .sw-intro:not(:has(> :not(:empty))) { display: none; }
+  .stepwise .sw-tag-number { font-size: calc(var(--media-spacing) * 5); font-weight: 800; letter-spacing: -0.02em; }
+  .stepwise .sw-tag-total { font-size: calc(var(--media-spacing) * 3); font-weight: 700; opacity: 0.72; margin-inline-start: 1px; }
+  .stepwise .sw-tag-title {
+    min-width: 0;
+    max-width: 60ch;
+    padding-inline: calc(var(--media-spacing) * 2.5) calc(var(--media-spacing) * 2);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: calc(var(--media-spacing) * 3.75);
+    font-weight: 650;
+    letter-spacing: -0.005em;
+    transition: max-width var(--media-duration-slower) cubic-bezier(0.2, 0.7, 0.2, 1), padding var(--media-duration-slower) ease, opacity var(--media-duration) ease;
+  }
+  .stepwise:not([data-step-flash], [data-step-waiting]) .sw-content:not([data-visible]) .sw-tag-title {
+    max-width: 0;
+    padding-inline: 0;
+    opacity: 0;
+  }
+
+  /* ---------------------------------------------------------------- dock */
+  .stepwise .sw-dock {
+    position: absolute;
+    inset-inline: var(--sw-edge);
+    bottom: var(--sw-edge);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--media-spacing) * 2.5);
+    pointer-events: none;
+  }
+  .stepwise .sw-dock > * { pointer-events: auto; }
+
+  /* ---------------------------------------------------------------- wait plate */
+  .stepwise .sw-wait {
+    display: none;
+    align-self: center;
+    box-sizing: border-box;
+    width: min(100%, calc(var(--media-spacing) * 136));
+    gap: var(--sw-pad);
+    padding: var(--sw-pad);
+    border-radius: var(--sw-plate-radius);
+    background: var(--sw-plate);
+    -webkit-backdrop-filter: var(--sw-blur);
+    backdrop-filter: var(--sw-blur);
+    box-shadow: 0 16px 40px -12px oklch(0% 0 0 / 0.55);
+    color: var(--sw-fg);
+    transition: opacity var(--media-duration-slower) ease, translate var(--media-duration-slower) cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .stepwise[data-step-waiting] .sw-wait { display: grid; }
+  @starting-style {
+    .stepwise[data-step-waiting] .sw-wait { opacity: 0; translate: 0 12px; }
+  }
+  .stepwise .sw-wait-label {
+    margin: calc(var(--media-spacing) * 0.5) calc(var(--media-spacing) * 1.5) 0;
+    font-size: calc(var(--media-spacing) * 3);
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    color: var(--sw-fg-muted);
+  }
+  .stepwise .sw-wait-actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--sw-pad);
+  }
+  .stepwise .sw-wait-button {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--media-spacing) * 2.5);
+    min-width: 0;
+    min-height: calc(var(--media-spacing) * 16);     /* 64px: a knuckle will do */
+    padding-inline: calc(var(--media-spacing) * 4);
+    border: 0;
+    border-radius: var(--sw-radius);
+    background: var(--sw-hover);
+    color: var(--sw-fg);
+    font: inherit;
+    font-size: calc(var(--media-spacing) * 4);
+    font-weight: 650;
+    text-align: start;
+    cursor: pointer;
+    transition: background-color var(--media-duration) ease, scale var(--media-duration-fast) ease;
+  }
+  .stepwise .sw-wait-button:active { scale: 0.98; }
+  @media (hover: hover) {
+    .stepwise .sw-wait-repeat:hover { background: color-mix(in oklab, var(--sw-fg) 22%, transparent); }
+    .stepwise .sw-wait-next:hover { background: color-mix(in oklab, var(--sw-accent) 88%, white); }
+  }
+  .stepwise .sw-wait-icon { flex: none; width: calc(var(--media-spacing) * 5.5); height: calc(var(--media-spacing) * 5.5); }
+  .stepwise .sw-key {
+    flex: none;
+    min-width: 1.5em;
+    padding: 0.2em 0.35em;
+    border-radius: calc(var(--media-spacing) * 1.25);
+    box-shadow: inset 0 0 0 1px var(--sw-rest);
+    font: 700 calc(var(--media-spacing) * 2.75) / 1 var(--sw-font);
+    text-align: center;
+    color: var(--sw-fg-muted);
+  }
+  .stepwise .sw-wait-next {
+    background: var(--sw-accent);
+    color: var(--sw-on-accent);
+    padding-inline-start: calc(var(--media-spacing) * 3);
+  }
+  .stepwise .sw-wait-next-number {
+    display: grid;
+    place-items: center;
+    flex: none;
+    min-width: calc(var(--media-spacing) * 10);
+    height: calc(var(--media-spacing) * 10);
+    border-radius: calc(var(--media-spacing) * 2.5);
+    background: var(--sw-on-accent);
+    color: var(--sw-accent);
+    font-size: calc(var(--media-spacing) * 5.5);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepwise .sw-wait-next-copy { display: grid; min-width: 0; gap: 1px; }
+  .stepwise .sw-wait-kicker {
+    font-size: calc(var(--media-spacing) * 2.75);
+    font-weight: 750;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    opacity: 0.74;
+  }
+  .stepwise .sw-wait-next-title {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: calc(var(--media-spacing) * 4.5);
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  .stepwise .sw-wait-arrow { margin-inline-start: auto; }
+
+  /* ---------------------------------------------------------------- bar */
+  .stepwise .sw-bar {
+    display: grid;
+    gap: calc(var(--media-spacing) * 0.5);
+    padding: calc(var(--media-spacing) * 1) var(--sw-pad) var(--sw-pad);
+    border-radius: var(--sw-plate-radius);
+    background: var(--sw-plate);
+    -webkit-backdrop-filter: var(--sw-blur);
+    backdrop-filter: var(--sw-blur);
+    color: var(--sw-fg);
+    transition: opacity var(--media-duration-controls) ease, translate var(--media-duration-slow) ease;
+  }
+  .stepwise .sw-content:not([data-visible]) .sw-bar {
+    opacity: 0;
+    translate: 0 12px;
+    pointer-events: none;
+  }
+  .stepwise .sw-row { display: flex; align-items: center; gap: calc(var(--media-spacing) * 0.5); min-width: 0; }
+  .stepwise .sw-spacer { flex: 1; }
+  .stepwise .sw-icons { display: inline-flex; align-items: center; gap: calc(var(--media-spacing) * 0.5); }
+
+  /* Without steps this is an ordinary player. */
+  .stepwise:not([data-steps]) :is(.sw-step-button, .sw-switch, .sw-hairline) { display: none; }
+
+  /* ---------------------------------------------------------------- time */
+  .stepwise .sw-time {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3em;
+    margin-inline: calc(var(--media-spacing) * 2);
+    font-size: calc(var(--media-spacing) * 3.25);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--sw-fg);
+    white-space: nowrap;
+  }
+  .stepwise .sw-time .media-time-separator,
+  .stepwise .sw-time .media-time-duration-value { color: var(--sw-fg-muted); }
+  .stepwise .sw-time .media-time-toggle { display: none; }
+
+  /* ---------------------------------------------------------------- the wait switch */
+  .stepwise .sw-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--media-spacing) * 2);
+    height: var(--sw-button);
+    padding-inline: calc(var(--media-spacing) * 2.5) calc(var(--media-spacing) * 2);
+    border: 0;
+    border-radius: var(--sw-radius);
+    background: transparent;
+    color: var(--sw-fg);
+    font: 650 calc(var(--media-spacing) * 3.25) / 1 var(--sw-font);
+    cursor: pointer;
+    transition: background-color var(--media-duration) ease;
+  }
+  @media (hover: hover) {
+    .stepwise .sw-switch:hover { background: var(--sw-hover); }
+  }
+  .stepwise .sw-switch-track {
+    position: relative;
+    flex: none;
+    width: calc(var(--media-spacing) * 9);
+    height: calc(var(--media-spacing) * 5.5);
+    border-radius: calc(var(--media-spacing) * 2.75);
+    background: var(--sw-rest);
+    transition: background-color var(--media-duration) ease;
+  }
+  .stepwise .sw-switch-knob {
+    position: absolute;
+    top: 3px;
+    inset-inline-start: 3px;
+    width: calc(var(--media-spacing) * 4);
+    height: calc(var(--media-spacing) * 4);
+    border-radius: 50%;
+    background: var(--sw-fg);
+    transition: translate var(--media-duration) cubic-bezier(0.3, 0.7, 0.2, 1), background-color var(--media-duration) ease;
+  }
+  .stepwise .sw-switch[aria-checked="true"] .sw-switch-track { background: var(--sw-accent); }
+  .stepwise .sw-switch[aria-checked="true"] .sw-switch-knob { translate: calc(var(--media-spacing) * 3.5) 0; background: var(--sw-on-accent); }
+  .stepwise[dir="rtl"] .sw-switch[aria-checked="true"] .sw-switch-knob,
+  [dir="rtl"] .stepwise .sw-switch[aria-checked="true"] .sw-switch-knob { translate: calc(var(--media-spacing) * -3.5) 0; }
+
+  /* ---------------------------------------------------------------- seek bar */
+  /* Every step is a full-width plane clipped to its own bounds (the scaffold's approach), so progress
+     runs on across segments and the gaps between steps are real gaps. */
+  .stepwise .media-time-slider {
+    position: relative;
+    display: block;
+    flex: none;
+    height: calc(var(--media-spacing) * 7);
+    cursor: pointer;
+    touch-action: none;
+    --sw-track: 6px;
+    --sw-track-y: calc(100% - var(--media-spacing) * 2.5);
+    --sw-gap: 0.5; /* half-gap each side of a boundary, in --media-spacing units */
+  }
+  .stepwise .media-time-slider-chapters {
+    position: absolute;
+    inset: 0;
+    display: block;
+    counter-reset: sw-step;
+  }
+  .stepwise .media-time-slider-chapter {
+    --media-chapter-inset-start: var(--sw-gap);
+    --media-chapter-inset-end: var(--sw-gap);
+    position: absolute;
+    inset: 0;
+    counter-increment: sw-step;
+    clip-path: inset(0 calc(100% - var(--media-slider-chapter-end, 100%)) 0 var(--media-slider-chapter-start, 0%));
+  }
+  .stepwise .media-time-slider-chapter:first-of-type { --media-chapter-inset-start: 0; }
+  .stepwise .media-time-slider-chapter:last-of-type { --media-chapter-inset-end: 0; }
+
+  /* Each segment carries its step number. */
+  .stepwise[data-steps] .media-time-slider-chapter::before {
+    content: counter(sw-step);
+    position: absolute;
+    top: 0;
+    left: calc(var(--media-slider-chapter-start, 0%) + var(--media-spacing) * var(--media-chapter-inset-start, 0) + 1px);
+    font-size: calc(var(--media-spacing) * 2.75);
+    font-weight: 800;
+    line-height: calc(var(--media-spacing) * 3.5);
+    font-variant-numeric: tabular-nums;
+    color: var(--sw-fg-muted);
+    transition: color var(--media-duration) ease;
+  }
+  .stepwise[data-steps] .media-time-slider-chapter:is([data-active], [data-highlighted])::before { color: var(--sw-fg); }
+
+  .stepwise .media-time-slider-track {
+    position: absolute;
+    top: var(--sw-track-y);
+    translate: 0 -50%;
+    inset-inline: 0;
+    height: var(--sw-track);
+    isolation: isolate;
+    transition: height var(--media-duration) ease;
+  }
+  .stepwise .media-time-slider:is([data-pointing], [data-dragging]) .media-time-slider-chapter[data-highlighted] .media-time-slider-track,
+  .stepwise .media-time-slider[data-dragging] .media-time-slider-chapter[data-active] .media-time-slider-track { height: calc(var(--sw-track) + 4px); }
+  .stepwise .media-time-slider-track::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: calc(var(--media-slider-chapter-start, 0%) + var(--media-spacing) * var(--media-chapter-inset-start, 0));
+    right: calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0));
+    border-radius: 3px;
+    background: var(--sw-rest);
+  }
+  .stepwise .media-time-slider-buffer,
+  .stepwise .media-time-slider-fill {
+    position: absolute;
+    inset-block: 0;
+    left: calc(var(--media-slider-chapter-start, 0%) + var(--media-spacing) * var(--media-chapter-inset-start, 0));
+    border-radius: 3px;
+    clip-path: inset(-1px 0);
+  }
+  .stepwise .media-time-slider-buffer {
+    right: max(calc(100% - var(--media-slider-buffer, 0%)),
+      calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0)));
+    background: color-mix(in oklab, var(--sw-fg) 18%, transparent);
+  }
+  .stepwise .media-time-slider-fill {
+    right: max(calc(100% - var(--media-slider-fill, 0%)),
+      calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0)));
+    background: var(--sw-accent);
+  }
+  .stepwise .media-time-slider[data-dragging] .media-time-slider-fill {
+    right: max(calc(100% - var(--media-slider-pointer, 0%)),
+      calc(100% - var(--media-slider-chapter-end, 100%) + var(--media-spacing) * var(--media-chapter-inset-end, 0)));
+  }
+
+  /* The thumb is an upright bar: it reads as a place on a ruler, and it is always there to grab. */
+  .stepwise .media-time-slider-thumb {
+    position: absolute;
+    top: var(--sw-track-y);
+    left: var(--media-slider-fill, 0%);
+    width: 6px;
+    height: calc(var(--media-spacing) * 4.5);
+    translate: -50% -50%;
+    border: 0;
+    border-radius: 3px;
+    background: var(--sw-fg);
+    box-shadow: 0 0 0 2px var(--sw-plate-solid), 0 2px 6px oklch(0% 0 0 / 0.5);
+    transition: height var(--media-duration) ease, width var(--media-duration) ease;
+  }
+  /* The scaffold centres the thumb with transform; this skin uses translate. Its own rule, because a
+     minifier folds transform and translate written together into one transform. */
+  .stepwise .media-time-slider > .media-time-slider-thumb { transform: none; }
+  .stepwise .media-time-slider[data-dragging] .media-time-slider-thumb { left: var(--media-slider-pointer, 0%); }
+  .stepwise .media-time-slider:is(:hover, [data-dragging], [data-pointing]) .media-time-slider-thumb { height: calc(var(--media-spacing) * 5.5); }
+  .stepwise .media-time-slider-thumb:focus-visible {
+    outline: 2px solid var(--media-ring);
+    outline-offset: 3px;
+  }
+
+  /* Preview: a frame where there are thumbnails, then the step and the time. */
+  .stepwise .media-time-slider-preview {
+    bottom: calc(100% + var(--media-spacing) * 2);
+    gap: 0;
+    padding: var(--media-spacing);
+    border-radius: calc(var(--media-spacing) * 3.5);
+    background: var(--sw-plate-solid);
+    box-shadow: 0 10px 28px -10px oklch(0% 0 0 / 0.6);
+    color: var(--sw-fg);
+    font-family: var(--sw-font);
+    transition: opacity var(--media-duration) ease, scale var(--media-duration) ease;
+    scale: 0.96;
+  }
+  .stepwise .media-time-slider:is([data-dragging], [data-pointing]) .media-time-slider-preview { scale: 1; }
+  .stepwise .media-slider-thumbnail {
+    border-radius: calc(var(--media-spacing) * 2.5);
+    background: #000;
+  }
+  .stepwise .media-slider-thumbnail:is([hidden], [data-hidden]) { display: none; }
+  .stepwise .media-time-slider-preview-meta {
+    box-sizing: border-box;
+    gap: calc(var(--media-spacing) * 2);
+    padding: calc(var(--media-spacing) * 1.25) calc(var(--media-spacing) * 1.5);
+    font-size: calc(var(--media-spacing) * 3.1);
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .stepwise .media-time-slider-chapter-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stepwise .media-time-slider-chapter-title:empty { display: none; }
+  .stepwise .media-time-slider-value { color: var(--sw-accent); }
+
+  /* ---------------------------------------------------------------- hairline */
+  /* With the controls away, progress stays as a hairline: one segment per step, dark-edged so it
+     holds over bright footage as well as dark. */
+  .stepwise .sw-hairline {
+    position: absolute;
+    inset-inline: var(--sw-edge);
+    bottom: calc(var(--media-spacing) * 2);
+    display: flex;
+    gap: 3px;
+    height: 3px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--media-duration-slow) ease;
+  }
+  .stepwise[data-step-started] .sw-content:not([data-visible]) .sw-hairline { opacity: 1; }
+  .stepwise .sw-hairline i {
+    flex: 1 1 0;
+    min-width: 2px;
+    border-radius: 2px;
+    background:
+      linear-gradient(to right, var(--sw-accent) calc(var(--sw-done, 0) * 100%), transparent 0),
+      color-mix(in oklab, var(--sw-fg) 62%, transparent);
+    box-shadow: 0 0 0 1px oklch(0% 0 0 / 0.42);
+  }
+
+  /* ---------------------------------------------------------------- popups */
+  .stepwise .media-menu-popup,
+  .stepwise .media-volume-popover-popup,
+  .stepwise .media-tooltip-popup { font-family: var(--sw-font); }
+  .stepwise .media-menu-popup,
+  .stepwise .media-volume-popover-popup {
+    border-radius: var(--media-popup-radius);
+    background: var(--sw-plate-solid);
+    box-shadow: 0 0 0 1px color-mix(in oklab, var(--sw-fg) 10%, transparent), 0 12px 32px -10px oklch(0% 0 0 / 0.6);
+    color: var(--sw-fg);
+  }
+  .stepwise .media-menu-content { padding: calc(var(--media-spacing) * 1.5); }
+  .stepwise .media-menu-item,
+  .stepwise .media-menu-radio-item,
+  .stepwise .media-menu-back-item {
+    font-size: calc(var(--media-spacing) * 3.4);
+    font-weight: 600;
+    border-radius: var(--media-menu-item-radius);
+    min-height: calc(var(--media-spacing) * 10);
+    padding-inline: calc(var(--media-spacing) * 2.5);
+  }
+  .stepwise .media-menu-item[data-highlighted],
+  .stepwise .media-menu-radio-item[data-highlighted],
+  .stepwise .media-menu-back-item[data-highlighted] { background: var(--sw-hover); }
+  .stepwise .media-menu-radio-icon { color: var(--sw-accent); }
+  .stepwise .media-menu-hint-label { font-variant-numeric: tabular-nums; color: var(--sw-fg-muted); }
+  .stepwise .media-menu-separator { opacity: 0.5; }
+  .stepwise .media-volume-popover-popup { padding: calc(var(--media-spacing) * 3.5) calc(var(--media-spacing) * 2.5); }
+  .stepwise .media-volume-slider-track { border-radius: 3px; background: var(--sw-rest); }
+  .stepwise .media-volume-slider-fill { background: var(--sw-accent); border-radius: 3px; }
+  .stepwise .media-volume-slider-thumb {
+    width: calc(var(--media-spacing) * 4.5);
+    height: 6px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--sw-fg);
+    box-shadow: 0 0 0 2px var(--sw-plate-solid);
+  }
+
+  .stepwise .media-tooltip-popup {
+    --media-tooltip-side-offset: calc(var(--media-spacing) * 2.5);
+    padding: calc(var(--media-spacing) * 1.5) calc(var(--media-spacing) * 2.5);
+    border-radius: calc(var(--media-spacing) * 2.5);
+    background: var(--sw-plate-solid);
+    color: var(--sw-fg);
+    font-size: calc(var(--media-spacing) * 3.1);
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  .stepwise .media-tooltip-popup[data-open] { gap: calc(var(--media-spacing) * 2); }
+  .stepwise .media-tooltip-shortcut {
+    padding: 0.2em 0.45em;
+    border-radius: calc(var(--media-spacing) * 1.25);
+    box-shadow: inset 0 0 0 1px var(--sw-rest);
+    background: none;
+    font: 700 calc(var(--media-spacing) * 2.6) / 1 var(--sw-font);
+    font-variant-numeric: tabular-nums;
+    color: var(--sw-fg-muted);
+  }
+  .stepwise .media-tooltip-shortcut:empty { display: none; }
+
+  /* ---------------------------------------------------------------- narrow players */
+  @container media-root (width < 40rem) {
+    .stepwise .sw-top .media-pip-button { display: none; }
+    .stepwise .sw-wait-next-title { font-size: calc(var(--media-spacing) * 4); }
+  }
+  @container media-root (width < 30rem) {
+    .stepwise { --sw-edge: calc(var(--media-spacing) * 2); }
+    /* Numbers leave the segments; the tag still says which step this is. */
+    .stepwise[data-steps] .media-time-slider-chapter::before { content: none; }
+    .stepwise .media-time-slider { height: calc(var(--media-spacing) * 5); --sw-track-y: 50%; }
+    .stepwise .sw-step-back { display: none; }       /* Repeat on the plate, and B, still go back */
+    .stepwise .sw-switch-label { display: none; }
+    .stepwise .sw-switch { padding-inline: calc(var(--media-spacing) * 1.5); }
+    .stepwise .sw-icons .media-captions-button { display: none; } /* still in Settings */
+    .stepwise .sw-time { margin-inline: calc(var(--media-spacing) * 1); font-size: calc(var(--media-spacing) * 3); }
+    .stepwise .sw-play { width: calc(var(--media-spacing) * 11); }
+    .stepwise .sw-center .media-button { width: calc(var(--media-spacing) * 15); height: calc(var(--media-spacing) * 15); }
+    .stepwise .sw-tag-title { font-size: calc(var(--media-spacing) * 3.4); }
+    .stepwise :is(.sw-tag, .sw-intro) { max-width: calc(100% - var(--sw-edge) * 2); }
+    .stepwise .sw-title { font-size: calc(var(--media-spacing) * 3.4); }
+    .stepwise .sw-top { display: none; }
+    /* Repeat keeps its name for assistive tech and shows its glyph only. */
+    .stepwise .sw-wait-repeat { padding-inline: 0; width: calc(var(--media-spacing) * 16); justify-content: center; }
+    .stepwise .sw-wait-repeat .sw-wait-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .stepwise .sw-key { display: none; }
+    .stepwise .sw-wait-button { min-height: calc(var(--media-spacing) * 14); }
+  }
+  @container media-root (width < 24rem) {
+    /* A phone-sized player is short as well as narrow: the plate gives up its heading, and the plate
+       itself says which step is next, so the tag steps aside while it is up. */
+    .stepwise .sw-wait-label { display: none; }
+    .stepwise[data-step-waiting] .sw-tag { display: none; }
+    .stepwise .sw-wait-next-title { font-size: calc(var(--media-spacing) * 3.75); }
+    /* Elapsed time only; the bar shows how much is left. */
+    .stepwise .sw-time .media-time-separator,
+    .stepwise .sw-time .media-time-duration-value { display: none; }
+    .stepwise .sw-row { gap: 0; }
+  }
+  @container media-root (width < 19rem) {
+    .stepwise .sw-wait-kicker { display: none; }
+    .stepwise .sw-step-next { display: none; }
+  }
+
+  /* Touch: thumb-sized targets, and no keyboard hints. */
+  @media (pointer: coarse) {
+    .stepwise { --sw-button: 44px; }
+    .stepwise .sw-key { display: none; }
+    .stepwise .media-time-slider-thumb { width: 8px; height: calc(var(--media-spacing) * 6); }
+  }
+  @container media-root (width < 30rem) {
+    /* Seven 44px targets do not fit a phone's width; the glyph boxes come in and the hit areas overlap out. */
+    .stepwise { --sw-button: 40px; }
+  }
+
+  /* ---------------------------------------------------------------- preferences */
+  @media (prefers-reduced-motion: reduce) {
+    .stepwise .sw-tag-title,
+    .stepwise .sw-wait,
+    .stepwise .sw-bar,
+    .stepwise .sw-switch-knob,
+    .stepwise .media-button,
+    .stepwise .sw-wait-button,
+    .stepwise .media-time-slider-preview,
+    .stepwise .sw-center .media-button { transition: none; }
+    .stepwise .media-button:active,
+    .stepwise .sw-wait-button:active { scale: 1; }
+    .stepwise .sw-content:not([data-visible]) .sw-bar { translate: none; }
+    .stepwise .media-time-slider-preview { scale: 1; }
+    @starting-style {
+      .stepwise[data-step-waiting] .sw-wait { opacity: 1; translate: none; }
+    }
+  }
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .stepwise {
+      --sw-plate: var(--sw-plate-solid);
+      --sw-blur: none;
+      --sw-fg-muted: color-mix(in oklab, var(--media-foreground) 84%, transparent);
+      --sw-rest: color-mix(in oklab, var(--media-foreground) 46%, transparent);
+    }
+    .stepwise .sw-backdrop { display: none; }
+    .stepwise :is(.sw-bar, .sw-tag, .sw-intro, .sw-wait) { box-shadow: 0 0 0 1px color-mix(in oklab, var(--sw-fg) 40%, transparent); }
+  }
+  @media (forced-colors: active) {
+    .stepwise {
+      --sw-plate: Canvas;
+      --sw-plate-solid: Canvas;
+      --sw-blur: none;
+      --sw-fg: CanvasText;
+      --sw-fg-muted: CanvasText;
+      --sw-rest: GrayText;
+      --sw-hover: Canvas;
+      --sw-accent: Highlight;
+      --sw-on-accent: HighlightText;
+      --sw-icon-knockout: Canvas;
+    }
+    .stepwise :is(.sw-bar, .sw-tag, .sw-intro, .sw-wait, .media-time-slider-preview) { border: 1px solid CanvasText; box-shadow: none; }
+    .stepwise :is(.sw-tag-count, .sw-intro-count, .sw-wait-next, .sw-wait-next-number, .sw-switch-track, .sw-switch-knob, .sw-hairline i, .sw-play, .sw-center .media-button) { forced-color-adjust: none; }
+    .stepwise :is(.sw-tag-count, .sw-intro-count) { background: Highlight; color: HighlightText; }
+    .stepwise :is(.sw-play, .sw-center .media-button) { background: ButtonText; color: ButtonFace; }
+    .stepwise :is(.sw-wait-button, .sw-switch) { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+    .stepwise .sw-wait-next { background: Highlight; color: HighlightText; }
+    .stepwise .sw-wait-next-number { background: HighlightText; color: Highlight; }
+    .stepwise .sw-switch-track { background: ButtonFace; border: 1px solid ButtonText; box-sizing: border-box; }
+    .stepwise .sw-switch-knob { background: ButtonText; }
+    .stepwise .sw-switch[aria-checked="true"] .sw-switch-track { background: Highlight; }
+    .stepwise .sw-switch[aria-checked="true"] .sw-switch-knob { background: HighlightText; }
+    .stepwise .media-button:hover,
+    .stepwise .media-button:focus-visible,
+    .stepwise .media-button[aria-expanded="true"] { color: HighlightText; background: Highlight; }
+    .stepwise .media-time-slider-track::before { background: GrayText; }
+    .stepwise .media-time-slider-fill { background: Highlight; }
+    .stepwise .media-time-slider-thumb { background: CanvasText; box-shadow: 0 0 0 2px Canvas; forced-color-adjust: none; }
+    .stepwise .sw-hairline i { background: linear-gradient(to right, Highlight calc(var(--sw-done, 0) * 100%), GrayText 0); box-shadow: 0 0 0 1px Canvas; }
+  }
+}
