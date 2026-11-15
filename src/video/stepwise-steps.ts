@@ -79,6 +79,8 @@ const STORAGE_KEY = 'stepwise:wait';
 const VOICE_KEY = 'stepwise:voice';
 /** How long a wait keeps the screen awake before letting the device sleep after all. */
 const AWAKE_MS = 30 * 60 * 1000;
+/** How long to leave between closing the microphone and playing sound again. */
+const MIC_SETTLE_MS = 350;
 /** Speed of a slower repeat. */
 const SLOW_RATE = 0.5;
 /** What the plate says as a wait goes on: seconds into the wait, translation key, English. */
@@ -189,6 +191,8 @@ export class StepwiseStepsElement extends UIElement {
   #wakeUntil = 0;
   #wakeTimer = 0;
   #menuWasOpen = false;
+  #micClosedAt = -Infinity;
+  #playTimer = 0;
 
   /** The steps, in order. Empty when the video has no chapters. */
   get steps(): readonly Step[] {
@@ -273,6 +277,7 @@ export class StepwiseStepsElement extends UIElement {
     clearTimeout(this.#flashTimer);
     clearTimeout(this.#pollTimer);
     clearTimeout(this.#heardTimer);
+    clearTimeout(this.#playTimer);
     this.#clearPatience();
     this.#stopListening();
     this.#letSleep();
@@ -304,6 +309,18 @@ export class StepwiseStepsElement extends UIElement {
     this.#seek(target.start);
   }
 
+  /** Start playback, leaving a moment after the microphone closes (see where a command is heard). */
+  #play() {
+    const media = this.#media;
+    if (!media) return;
+    if (this.#recognizer) this.#stopListening();
+    const wait = Math.max(0, MIC_SETTLE_MS - (performance.now() - this.#micClosedAt));
+    clearTimeout(this.#playTimer);
+    const start = () => void Promise.resolve(media.play()).catch(() => undefined);
+    if (wait > 0) this.#playTimer = window.setTimeout(start, wait);
+    else start();
+  }
+
   /** Play from the start of the step at `index` (0-based). */
   goTo(index: number): void {
     const media = this.#media;
@@ -312,7 +329,7 @@ export class StepwiseStepsElement extends UIElement {
     this.#leaveWait();
     this.#setSlow(-1);
     this.#seek(step.start);
-    void Promise.resolve(media.play()).catch(() => undefined);
+    this.#play();
   }
 
   /** Play this step again from its start; `slow` plays it at half speed, for this once. */
@@ -328,7 +345,7 @@ export class StepwiseStepsElement extends UIElement {
         ? this.#format('stepwise.status.slower', 'Repeating step {n} at half speed', at + 1)
         : this.#format('stepwise.status.repeat', 'Repeating step {n}', at + 1)
     );
-    void Promise.resolve(media.play()).catch(() => undefined);
+    this.#play();
   }
 
   /** Half speed for one step. Whatever speed the viewer had chosen comes back when the step is over. */
@@ -354,7 +371,7 @@ export class StepwiseStepsElement extends UIElement {
       this.#seek(0);
     }
     // The `play` handler moves to the next step's first frame and clears the wait.
-    void Promise.resolve(media.play()).catch(() => undefined);
+    this.#play();
   }
 
   // ---------------------------------------------------------------- media and chapters
@@ -819,8 +836,24 @@ export class StepwiseStepsElement extends UIElement {
         return;
       }
       acted = true;
-      // Long enough to read what was heard, short enough to feel immediate.
-      this.#heardTimer = window.setTimeout(command.run, 350);
+      // Close the microphone before the video plays again. A phone that is still recording when
+      // playback resumes can send the sound to its call speaker or drop it, and a Bluetooth headset
+      // has to see the microphone gone before it goes back from call mode to music.
+      let done = false;
+      const go = () => {
+        if (done || token !== this.#listenToken) return;
+        done = true;
+        command.run();
+      };
+      recognizer.addEventListener('end', () => window.setTimeout(go, MIC_SETTLE_MS), { once: true });
+      this.#recognizer = null;
+      this.#micClosedAt = performance.now();
+      try {
+        recognizer.abort();
+      } catch {
+        /* already stopped */
+      }
+      this.#heardTimer = window.setTimeout(go, 1500); // in case `end` never comes
     });
     recognizer.addEventListener('error', (event) => {
       if (token !== this.#listenToken) return;
@@ -887,6 +920,7 @@ export class StepwiseStepsElement extends UIElement {
     clearTimeout(this.#heardTimer);
     const recognizer = this.#recognizer;
     this.#recognizer = null;
+    if (recognizer) this.#micClosedAt = performance.now();
     try {
       recognizer?.abort();
     } catch {

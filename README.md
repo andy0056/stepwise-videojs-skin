@@ -79,6 +79,7 @@ Fold the corners in
 - Wording that sounds like a command but is not one is left alone: "I'm not ready" does nothing, and "next step for me" is next, not step four.
 - Full screen cannot be a spoken command: browsers allow it only after a real click or key press.
 - Turning voice on asks for the microphone with the browser's own prompt. If the browser, the operating system or an embedding page refuses, voice turns itself off, stays off on the next visit, and the plate says what happened and what to do. A missing microphone and a missing speech service each get their own message.
+- The microphone is closed, and given a third of a second to settle, before the video makes sound again. A phone that is still recording when playback resumes can route sound to its call speaker, and a Bluetooth headset has to leave call mode first. Headsets can still take a second or two to switch back; that part belongs to the device.
 - `<stepwise-steps voice-lang="en-GB">` sets the recognition language (default `en-US`). The command words are translatable strings.
 
 ## Design notes
