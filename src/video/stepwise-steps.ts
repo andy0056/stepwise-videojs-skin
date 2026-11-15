@@ -12,8 +12,9 @@
  *   [data-step="summary-count"] "7 steps" and [data-step="summary"] "1:24", shown before the first play
  *   [data-step="back"]       [data-step="next"]      step buttons
  *   [data-step="wait"]       the switch (role="switch")
- *   [data-step="plate"]      the wait plate; holds ["done"], ["repeat"], ["repeat-label"], ["continue"],
- *                            ["continue-kicker"], ["continue-number"], ["continue-title"]
+ *   [data-step="plate"]      the wait plate; holds ["done"], ["patience"], ["repeat"], ["repeat-label"],
+ *                            ["slower"], ["continue"], ["continue-kicker"], ["continue-number"],
+ *                            ["continue-title"], and ["voice"] with ["voice-label"]
  *   [data-step="hairline"]   progress kept on screen while the controls are hidden
  *   [data-step="status"]     live region for step changes
  *
@@ -23,8 +24,18 @@
  *   data-step-flash          a step has just begun; show its title for a moment
  *   data-step-waiting        waiting at the end of a step (value "end" after the last one)
  *   data-step-wait="on|off"  the switch
+ *   data-step-slow           the step is being repeated at half speed
+ *   data-step-voice="off|on|listening|heard"   spoken commands (absent where speech recognition is missing)
  *
- * Keys, when the player has focus: N next step, B back a step, R repeat this step, W toggle waiting.
+ * Voice. Where the browser can recognise speech, the plate carries a "Say next" button. It is off
+ * until the viewer turns it on. The microphone is opened only while the plate is up, when the video
+ * is paused, so the video's own sound can never trigger it, and it is closed the moment the wait ends.
+ * Recognition runs on the device where the browser offers that; otherwise the browser's own speech
+ * service is used. Words: "next" (also "continue", "go on", "ready"), "repeat" (also "again"),
+ * "slower", and at the end "start again".
+ *
+ * Keys, when the player has focus: N next step, B back a step, R repeat this step, S repeat it
+ * slower, W toggle waiting.
  * Events on the element: `stepchange` and `stepwait`, both with `detail: { index, step }`.
  */
 import {
@@ -56,6 +67,42 @@ interface MediaLike extends EventTarget {
 }
 
 const STORAGE_KEY = 'stepwise:wait';
+const VOICE_KEY = 'stepwise:voice';
+/** Speed of a slower repeat. */
+const SLOW_RATE = 0.5;
+/** What the plate says as a wait goes on: seconds into the wait, translation key, English. */
+const PATIENCE: ReadonlyArray<readonly [number, string, string]> = [
+  [0, 'stepwise.patience.0', 'Take your time.'],
+  [20, 'stepwise.patience.1', 'Still here.'],
+  [60, 'stepwise.patience.2', 'No rush. Really.'],
+  [180, 'stepwise.patience.3', 'I can do this all day.'],
+  [600, 'stepwise.patience.4', 'Ten minutes. We are both very patient.'],
+];
+
+/** The parts of the Web Speech API this element uses. */
+interface Recognizer extends EventTarget {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  processLocally?: boolean;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+interface RecognizerClass {
+  new (): Recognizer;
+  available?: (options: { langs: string[]; processLocally: boolean }) => Promise<string>;
+}
+interface RecognitionResultEvent extends Event {
+  resultIndex: number;
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+function recognizerClass(): RecognizerClass | null {
+  const scope = globalThis as unknown as { SpeechRecognition?: RecognizerClass; webkitSpeechRecognition?: RecognizerClass };
+  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+}
 /** How close to the end of a step the video stops, in seconds. Near enough to be the step's last picture. */
 const HOLD_BEFORE_END = 0.06;
 /** How long a new step's title stays up while the controls are hidden. */
@@ -99,6 +146,13 @@ export class StepwiseStepsElement extends UIElement {
   #releaseLock: (() => void) | null = null;
   #parts: Record<string, HTMLElement | null> = {};
   #segments: HTMLElement[] = [];
+  #patienceTimers: number[] = [];
+  #slowIndex = -1; // step being repeated slowly, or -1
+  #restoreRate = 1;
+  #voice = false;
+  #recognizer: Recognizer | null = null;
+  #listenToken = 0;
+  #heardTimer = 0;
 
   /** The steps, in order. Empty when the video has no chapters. */
   get steps(): readonly Step[] {
@@ -133,6 +187,7 @@ export class StepwiseStepsElement extends UIElement {
     for (const name of [
       'tag', 'number', 'total', 'title', 'summary', 'summary-count', 'back', 'next', 'wait', 'plate', 'done', 'repeat',
       'repeat-label', 'continue', 'continue-kicker', 'continue-number', 'continue-title', 'hairline', 'status',
+      'patience', 'slower', 'voice', 'voice-label',
     ]) {
       this.#parts[name] = root.querySelector(`[data-step="${name}"]`);
     }
@@ -151,6 +206,20 @@ export class StepwiseStepsElement extends UIElement {
     this.#parts.wait?.addEventListener('click', () => this.#setWait(!this.#wait, true), { signal });
     this.#parts.repeat?.addEventListener('click', () => this.repeat(), { signal });
     this.#parts.continue?.addEventListener('click', () => this.continue(), { signal });
+    this.#parts.slower?.addEventListener('click', () => this.repeat(true), { signal });
+    this.#parts.voice?.addEventListener('click', () => this.#setVoice(!this.#voice, true), { signal });
+
+    // Voice is offered only where the browser can do it.
+    if (recognizerClass() && this.#parts.voice) {
+      this.#parts.voice.hidden = false;
+      let voice: string | null = null;
+      try {
+        voice = localStorage.getItem(VOICE_KEY);
+      } catch {
+        /* as above */
+      }
+      this.#setVoice(voice === 'on', false);
+    }
     root.addEventListener('keydown', this.#onKeyDown, { signal });
 
     this.#attachMedia();
@@ -163,6 +232,9 @@ export class StepwiseStepsElement extends UIElement {
     cancelAnimationFrame(this.#frame);
     clearTimeout(this.#flashTimer);
     clearTimeout(this.#pollTimer);
+    clearTimeout(this.#heardTimer);
+    this.#clearPatience();
+    this.#stopListening();
     this.#releaseLock?.();
     this.#releaseLock = null;
     this.#chapters = null;
@@ -191,15 +263,34 @@ export class StepwiseStepsElement extends UIElement {
     this.#seek(target.start);
   }
 
-  /** Play this step again from its start. */
-  repeat(): void {
+  /** Play this step again from its start; `slow` plays it at half speed, for this once. */
+  repeat(slow = false): void {
     const media = this.#media;
     if (!media || !this.#steps.length) return;
     const at = this.#waiting !== -1 ? this.#waiting : Math.max(this.#index, 0);
     this.#leaveWait();
+    this.#setSlow(slow ? at : -1);
     this.#seek(this.#steps[at].start);
-    this.#say(this.#format('stepwise.status.repeat', 'Repeating step {n}', at + 1));
+    this.#say(
+      slow
+        ? this.#format('stepwise.status.slower', 'Repeating step {n} at half speed', at + 1)
+        : this.#format('stepwise.status.repeat', 'Repeating step {n}', at + 1)
+    );
     void Promise.resolve(media.play()).catch(() => undefined);
+  }
+
+  /** Half speed for one step. Whatever speed the viewer had chosen comes back when the step is over. */
+  #setSlow(index: number) {
+    const media = this.#media;
+    if (!media) return;
+    if (index !== -1) {
+      if (this.#slowIndex === -1) this.#restoreRate = media.playbackRate || 1;
+      media.playbackRate = SLOW_RATE;
+    } else if (this.#slowIndex !== -1) {
+      media.playbackRate = this.#restoreRate;
+    }
+    this.#slowIndex = index;
+    this.#root?.toggleAttribute('data-step-slow', index !== -1);
   }
 
   /** Leave the wait and play on. After the last step, start again from the top. */
@@ -463,8 +554,11 @@ export class StepwiseStepsElement extends UIElement {
     const plate = this.#parts.plate;
     if (!root) return;
     this.#waiting = index;
+    this.#setSlow(-1);
     root.setAttribute('data-step-waiting', this.#ended ? 'end' : 'step');
     this.#renderPlate();
+    this.#startPatience();
+    if (this.#voice) void this.#listen();
     if (plate) plate.inert = false;
     // Deciding takes as long as it takes: hold the controls while the plate is up.
     this.#releaseLock ??= this.#controls.value?.requestControlsLock?.() ?? null;
@@ -474,9 +568,9 @@ export class StepwiseStepsElement extends UIElement {
     const said = this.#ended
       ? this.#translate('stepwise.status.end', 'All steps done.')
       : `${this.#format('stepwise.status.done', 'Step {n} done.', index + 1)} ${this.#translate('stepwise.status.waiting', 'Waiting.')} ${
-          next ? `${this.#translate('stepwise.next', 'Next step')}: ${next.title}` : ''
+          next ? `${this.#translate('stepwise.next', 'Next step')}: ${next.title}.` : ''
         }`;
-    this.#say(said);
+    this.#say(this.#voice ? `${said} ${this.#translate('stepwise.status.voice', 'Listening for “next”.')}` : said);
 
     // A keyboard user already inside the player lands on the way forward.
     if (root.contains(document.activeElement) && !root.querySelector('media-menu[data-open]')) {
@@ -492,6 +586,8 @@ export class StepwiseStepsElement extends UIElement {
     const hadFocus = !!plate && plate.contains(document.activeElement);
     this.#waiting = -1;
     this.#ended = false;
+    this.#clearPatience();
+    this.#stopListening();
     root?.removeAttribute('data-step-waiting');
     if (plate) plate.inert = true;
     this.#releaseLock?.();
@@ -520,6 +616,184 @@ export class StepwiseStepsElement extends UIElement {
     if (!on && this.#waiting !== -1 && !this.#ended) this.continue();
   }
 
+  // ---------------------------------------------------------------- the wait line
+
+  /** A line under the heading that changes as the wait goes on. Company, not a countdown. */
+  #startPatience() {
+    this.#clearPatience();
+    const line = this.#parts.patience;
+    if (!line) return;
+    if (this.#ended) {
+      line.textContent = this.#translate('stepwise.patience.end', 'Nicely done.');
+      return;
+    }
+    for (const [after, key, fallback] of PATIENCE) {
+      const show = () => {
+        line.textContent =
+          after === 0 && this.#voice
+            ? this.#translate('stepwise.patience.voice', 'Say “next” when you’re ready.')
+            : this.#translate(key, fallback);
+      };
+      if (after === 0) show();
+      else this.#patienceTimers.push(window.setTimeout(show, after * 1000));
+    }
+  }
+
+  #clearPatience() {
+    for (const timer of this.#patienceTimers) clearTimeout(timer);
+    this.#patienceTimers = [];
+  }
+
+  // ---------------------------------------------------------------- voice
+
+  #setVoice(on: boolean, fromViewer: boolean) {
+    this.#voice = on;
+    this.#parts.voice?.setAttribute('aria-pressed', String(on));
+    this.#voiceState(on ? 'on' : 'off');
+    // The first line of a wait mentions voice only while voice is on.
+    if (!on && this.#waiting !== -1) this.#startPatience();
+    if (!fromViewer) return;
+    try {
+      localStorage.setItem(VOICE_KEY, on ? 'on' : 'off');
+    } catch {
+      /* not kept */
+    }
+    if (on && this.#waiting !== -1) {
+      this.#startPatience();
+      void this.#listen(true);
+    } else if (!on) {
+      this.#stopListening();
+      this.#say(this.#translate('stepwise.voice.off', 'Voice off'));
+    }
+  }
+
+  #voiceState(state: 'off' | 'on' | 'listening' | 'heard', heard = '') {
+    const root = this.#root;
+    const label = this.#parts['voice-label'];
+    if (!root || !this.#parts.voice || this.#parts.voice.hidden) return;
+    root.setAttribute('data-step-voice', state);
+    if (!label) return;
+    label.textContent =
+      state === 'listening'
+        ? this.#translate('stepwise.voice.listening', 'Listening')
+        : state === 'heard'
+          ? `${this.#translate('stepwise.voice.heard', 'Heard')} “${heard}”`
+          : this.#translate('stepwise.voice.say', 'Say “next”');
+  }
+
+  /** Open the microphone for this wait. */
+  async #listen(announce = false) {
+    const Recognition = recognizerClass();
+    if (!Recognition || this.#waiting === -1) return;
+    this.#stopListening();
+    const token = ++this.#listenToken;
+    const lang = this.getAttribute('voice-lang') || 'en-US';
+
+    // Keep the audio on the device where the browser can.
+    let local = false;
+    try {
+      local = (await Recognition.available?.({ langs: [lang], processLocally: true })) === 'available';
+    } catch {
+      local = false;
+    }
+    if (token !== this.#listenToken || this.#waiting === -1 || !this.#voice) return;
+
+    const recognizer = new Recognition();
+    recognizer.lang = lang;
+    recognizer.continuous = true;
+    recognizer.interimResults = true;
+    recognizer.maxAlternatives = 3;
+    if (local) recognizer.processLocally = true;
+    let acted = false;
+
+    recognizer.addEventListener('start', () => {
+      if (token === this.#listenToken) {
+        this.#voiceState('listening');
+        // Said aloud only when the viewer has just switched voice on; at the start of a wait the
+        // wait's own announcement says that the player is listening.
+        if (announce) this.#say(this.#translate('stepwise.voice.listening', 'Listening'));
+      }
+    });
+    recognizer.addEventListener('result', (event) => {
+      if (token !== this.#listenToken || acted) return;
+      const { results, resultIndex } = event as RecognitionResultEvent;
+      let said = '';
+      for (let i = resultIndex; i < results.length; i++) {
+        for (let j = 0; j < results[i].length; j++) said += ` ${results[i][j].transcript}`;
+      }
+      const command = this.#command(said.toLowerCase());
+      if (!command) return;
+      acted = true;
+      this.#voiceState('heard', command.word);
+      // Long enough to read what was heard, short enough to feel immediate.
+      this.#heardTimer = window.setTimeout(command.run, 350);
+    });
+    recognizer.addEventListener('error', (event) => {
+      if (token !== this.#listenToken) return;
+      const error = (event as Event & { error?: string }).error;
+      if (error === 'no-speech' || error === 'aborted') return; // `end` follows, and listening resumes
+      // Blocked, no service, or no model for the language: stop offering to listen.
+      this.#listenToken++;
+      this.#recognizer = null;
+      this.#setVoice(false, false);
+      const blocked = error === 'not-allowed' || error === 'service-not-allowed';
+      const text = blocked
+        ? this.#translate('stepwise.voice.blocked', 'Microphone is blocked')
+        : this.#translate('stepwise.voice.unavailable', 'Voice is not available');
+      const label = this.#parts['voice-label'];
+      if (label) label.textContent = text;
+      this.#say(text);
+    });
+    recognizer.addEventListener('end', () => {
+      // Browsers end a session after a silence. While the wait lasts, keep listening.
+      if (token !== this.#listenToken || acted || this.#waiting === -1 || !this.#voice) return;
+      window.setTimeout(() => {
+        if (token === this.#listenToken && this.#waiting !== -1 && this.#voice) void this.#listen();
+      }, 250);
+    });
+
+    this.#recognizer = recognizer;
+    try {
+      recognizer.start();
+    } catch {
+      this.#recognizer = null;
+    }
+  }
+
+  #stopListening() {
+    this.#listenToken++;
+    clearTimeout(this.#heardTimer);
+    const recognizer = this.#recognizer;
+    this.#recognizer = null;
+    try {
+      recognizer?.abort();
+    } catch {
+      /* already stopped */
+    }
+    if (this.#voice) this.#voiceState('on');
+  }
+
+  /** The command in what was said, if any. "Slower" is checked first: "repeat it slower" means slower. */
+  #command(said: string): { word: string; run: () => void } | null {
+    const has = (key: string, fallback: string) => {
+      const words = this.#translate(key, fallback).split('|');
+      return words.find((word) => new RegExp(`(^|[^\\p{L}])${word.trim()}([^\\p{L}]|$)`, 'u').test(said))?.trim();
+    };
+    const slower = has('stepwise.voice.words.slower', 'slower|slowly|slow');
+    if (slower) return { word: slower, run: () => this.repeat(true) };
+    if (this.#ended) {
+      const restart = has('stepwise.voice.words.restart', 'start again|start over|restart|from the top');
+      if (restart) return { word: restart, run: () => this.continue() };
+    }
+    const repeat = has('stepwise.voice.words.repeat', 'repeat|again|once more');
+    if (repeat) return { word: repeat, run: () => this.repeat() };
+    if (!this.#ended) {
+      const next = has('stepwise.voice.words.next', 'next|continue|go on|carry on|ready');
+      if (next) return { word: next, run: () => this.continue() };
+    }
+    return null;
+  }
+
   // ---------------------------------------------------------------- keys
 
   #onKeyDown = (event: KeyboardEvent) => {
@@ -529,6 +803,7 @@ export class StepwiseStepsElement extends UIElement {
     if (key === 'n') this.next();
     else if (key === 'b') this.back();
     else if (key === 'r') this.repeat();
+    else if (key === 's') this.repeat(true);
     else if (key === 'w') this.#setWait(!this.#wait, true);
     else return;
     event.preventDefault();
@@ -541,6 +816,7 @@ export class StepwiseStepsElement extends UIElement {
     const steps = this.#steps;
     if (index !== this.#index) {
       this.#index = index;
+      if (this.#slowIndex !== -1 && index !== this.#slowIndex) this.#setSlow(-1);
       const step = steps[index];
       const { number, total, title, tag, back, next } = this.#parts;
       if (step) {

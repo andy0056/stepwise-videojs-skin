@@ -278,6 +278,19 @@
     letter-spacing: -0.005em;
     transition: max-width var(--media-duration-slower) cubic-bezier(0.2, 0.7, 0.2, 1), padding var(--media-duration-slower) ease, opacity var(--media-duration) ease;
   }
+  .stepwise .sw-tag-slow {
+    display: none;
+    flex: none;
+    margin-inline: calc(var(--media-spacing) * 0.5) calc(var(--media-spacing) * 1.5);
+    padding: calc(var(--media-spacing) * 1) calc(var(--media-spacing) * 1.5);
+    border-radius: calc(var(--media-spacing) * 1.5);
+    box-shadow: inset 0 0 0 1px var(--sw-rest);
+    font-size: calc(var(--media-spacing) * 3);
+    font-weight: 750;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepwise[data-step-slow] .sw-tag-slow { display: inline-flex; }
   .stepwise:not([data-step-flash], [data-step-waiting]) .sw-content:not([data-visible]) .sw-tag-title {
     max-width: 0;
     padding-inline: 0;
@@ -301,7 +314,7 @@
     display: none;
     align-self: center;
     box-sizing: border-box;
-    width: min(100%, calc(var(--media-spacing) * 136));
+    width: min(100%, calc(var(--media-spacing) * 164));
     gap: var(--sw-pad);
     padding: var(--sw-pad);
     border-radius: var(--sw-plate-radius);
@@ -312,11 +325,16 @@
     color: var(--sw-fg);
     transition: opacity var(--media-duration-slower) ease, translate var(--media-duration-slower) cubic-bezier(0.2, 0.7, 0.2, 1);
   }
-  .stepwise[data-step-waiting] .sw-wait { display: grid; }
+  .stepwise[data-step-waiting] .sw-wait { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   @starting-style {
     .stepwise[data-step-waiting] .sw-wait { opacity: 0; translate: 0 12px; }
   }
   .stepwise .sw-wait-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 calc(var(--media-spacing) * 2.5);
+    min-width: 0;
     margin: calc(var(--media-spacing) * 0.5) calc(var(--media-spacing) * 1.5) 0;
     font-size: calc(var(--media-spacing) * 3);
     font-weight: 700;
@@ -325,10 +343,70 @@
     font-variant-numeric: tabular-nums;
     color: var(--sw-fg-muted);
   }
+  /* The line that keeps the viewer company. Sentence case, in the plate's own voice. */
+  .stepwise .sw-wait-patience {
+    font-size: calc(var(--media-spacing) * 3.25);
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--sw-fg);
+  }
+  .stepwise .sw-wait-patience:empty { display: none; }
+
+  /* Voice. Outlined when off; filled, with a beating dot, while the microphone is open. */
+  .stepwise .sw-voice {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--media-spacing) * 1.5);
+    height: calc(var(--media-spacing) * 8);
+    padding-inline: calc(var(--media-spacing) * 2) calc(var(--media-spacing) * 3);
+    border: 0;
+    border-radius: calc(var(--media-spacing) * 2.5);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--sw-rest);
+    color: var(--sw-fg);
+    font: 650 calc(var(--media-spacing) * 3.25) / 1 var(--sw-font);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--media-duration) ease, color var(--media-duration) ease, box-shadow var(--media-duration) ease;
+  }
+  .stepwise .sw-voice[hidden] { display: none; }
+  .stepwise .sw-voice:focus-visible { outline: 2px solid var(--media-ring); outline-offset: 2px; }
+  .stepwise .sw-voice-icon { flex: none; width: calc(var(--media-spacing) * 4.5); height: calc(var(--media-spacing) * 4.5); }
+  @media (hover: hover) {
+    .stepwise .sw-voice:hover { background: var(--sw-hover); }
+  }
+  .stepwise .sw-voice[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--sw-accent); }
+  .stepwise:is([data-step-voice="listening"], [data-step-voice="heard"]) .sw-voice {
+    background: var(--sw-accent);
+    box-shadow: none;
+    color: var(--sw-on-accent);
+  }
+  .stepwise[data-step-voice="listening"] .sw-voice-text::after {
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-inline-start: 0.5em;
+    border-radius: 50%;
+    background: currentColor;
+    animation: sw-beat 1.2s ease-in-out infinite;
+  }
+  @keyframes sw-beat {
+    50% { opacity: 0.25; }
+  }
+
   .stepwise .sw-wait-actions {
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto auto minmax(0, 1fr);
     gap: var(--sw-pad);
+  }
+  .stepwise .sw-wait-half {
+    font-size: calc(var(--media-spacing) * 4.25);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
   }
   .stepwise .sw-wait-button {
     display: flex;
@@ -390,14 +468,18 @@
     text-transform: uppercase;
     opacity: 0.74;
   }
+  .stepwise .sw-wait-kicker { white-space: nowrap; }
+  /* A step's name is what the viewer is choosing; it gets two lines before it is cut. */
   .stepwise .sw-wait-next-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
     font-size: calc(var(--media-spacing) * 4.5);
     font-weight: 750;
     letter-spacing: -0.01em;
-    line-height: 1.2;
+    line-height: 1.15;
   }
   .stepwise .sw-wait-arrow { margin-inline-start: auto; }
 
@@ -718,6 +800,12 @@
   .stepwise .media-tooltip-shortcut:empty { display: none; }
 
   /* ---------------------------------------------------------------- narrow players */
+  @container media-root (width < 46rem) {
+    /* Slower keeps its sign and gives its word to the step's name. */
+    .stepwise .sw-wait-slower .sw-wait-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .stepwise .sw-wait .sw-key { display: none; }
+    .stepwise .sw-wait-button { padding-inline: calc(var(--media-spacing) * 3.5); }
+  }
   @container media-root (width < 40rem) {
     .stepwise .sw-top .media-pip-button { display: none; }
     .stepwise .sw-wait-next-title { font-size: calc(var(--media-spacing) * 4); }
@@ -743,12 +831,24 @@
     .stepwise .sw-wait-repeat .sw-wait-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .stepwise .sw-key { display: none; }
     .stepwise .sw-wait-button { min-height: calc(var(--media-spacing) * 14); }
+    /* One row: voice, repeat, next. Slower leaves the plate; saying "slower" and the S key still work. */
+    .stepwise[data-step-waiting] .sw-wait { display: flex; flex-wrap: wrap; }
+    .stepwise .sw-wait-actions { display: contents; }
+    .stepwise .sw-wait-label { flex: 1 0 100%; box-sizing: border-box; margin-inline: calc(var(--media-spacing) * 1.5); }
+    .stepwise .sw-wait-slower { display: none; }
+    .stepwise .sw-wait-next { flex: 1 1 0; }
+    .stepwise .sw-voice { flex: none; justify-content: center; width: calc(var(--media-spacing) * 14); height: calc(var(--media-spacing) * 14); padding: 0; border-radius: var(--sw-radius); }
+    .stepwise .sw-voice-icon { width: calc(var(--media-spacing) * 5.5); height: calc(var(--media-spacing) * 5.5); }
+    .stepwise .sw-voice-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    /* At this size a filled square would compete with Next step: listening is a bright outline instead. */
+    .stepwise:is([data-step-voice="listening"], [data-step-voice="heard"]) .sw-voice { background: transparent; box-shadow: inset 0 0 0 2px var(--sw-accent); color: var(--sw-accent); }
+    .stepwise[data-step-voice="listening"] .sw-voice-icon { animation: sw-beat 1.2s ease-in-out infinite; }
   }
   @container media-root (width < 24rem) {
     /* A phone-sized player is short as well as narrow: the plate gives up its heading, and the plate
        itself says which step is next, so the tag steps aside while it is up. */
     .stepwise .sw-wait-label { display: none; }
-    .stepwise[data-step-waiting] .sw-tag { display: none; }
+    .stepwise[data-steps][data-step-waiting] .sw-tag { display: none; }
     .stepwise .sw-wait-next-title { font-size: calc(var(--media-spacing) * 3.75); }
     /* Elapsed time only; the bar shows how much is left. */
     .stepwise .sw-time .media-time-separator,
@@ -764,6 +864,7 @@
   @media (pointer: coarse) {
     .stepwise { --sw-button: 44px; }
     .stepwise .sw-key { display: none; }
+    .stepwise .sw-voice { min-height: 40px; }
     .stepwise .media-time-slider-thumb { width: 8px; height: calc(var(--media-spacing) * 6); }
   }
   @container media-root (width < 30rem) {
@@ -785,6 +886,8 @@
     .stepwise .sw-wait-button:active { scale: 1; }
     .stepwise .sw-content:not([data-visible]) .sw-bar { translate: none; }
     .stepwise .media-time-slider-preview { scale: 1; }
+    .stepwise[data-step-voice="listening"] .sw-voice-text::after,
+    .stepwise[data-step-voice="listening"] .sw-voice-icon { animation: none; }
     @starting-style {
       .stepwise[data-step-waiting] .sw-wait { opacity: 1; translate: none; }
     }
@@ -816,7 +919,10 @@
     .stepwise :is(.sw-tag-count, .sw-intro-count, .sw-wait-next, .sw-wait-next-number, .sw-switch-track, .sw-switch-knob, .sw-hairline i, .sw-play, .sw-center .media-button) { forced-color-adjust: none; }
     .stepwise :is(.sw-tag-count, .sw-intro-count) { background: Highlight; color: HighlightText; }
     .stepwise :is(.sw-play, .sw-center .media-button) { background: ButtonText; color: ButtonFace; }
-    .stepwise :is(.sw-wait-button, .sw-switch) { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; }
+    .stepwise :is(.sw-wait-button, .sw-switch, .sw-voice) { border: 1px solid ButtonText; background: ButtonFace; color: ButtonText; box-shadow: none; forced-color-adjust: none; }
+    .stepwise .sw-voice[aria-pressed="true"] { border-width: 2px; }
+    .stepwise:is([data-step-voice="listening"], [data-step-voice="heard"]) .sw-voice { background: Highlight; color: HighlightText; }
+    .stepwise .sw-tag-slow { border: 1px solid CanvasText; box-shadow: none; }
     .stepwise .sw-wait-next { background: Highlight; color: HighlightText; }
     .stepwise .sw-wait-next-number { background: HighlightText; color: Highlight; }
     .stepwise .sw-switch-track { background: ButtonFace; border: 1px solid ButtonText; box-sizing: border-box; }

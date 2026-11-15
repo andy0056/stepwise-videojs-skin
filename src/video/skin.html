@@ -88,6 +88,7 @@
 </span>
 <span class="sw-tag-title" data-step="title">
 </span>
+<span class="sw-tag-slow" aria-hidden="true">½×</span>
 </div>
 
 <!-- Before the first play the same corner says what this video is and how much there is to do. -->
@@ -104,14 +105,29 @@
 <div class="sw-dock">
 <!-- The wait plate. At the end of a step the video stops here until the viewer is ready. -->
 <div class="sw-wait" data-step="plate" role="group" aria-labelledby="sw-wait-label" inert>
-<p class="sw-wait-label" id="sw-wait-label" data-step="done">
+<p class="sw-wait-label" id="sw-wait-label">
+<span data-step="done">
+</span>
+<span class="sw-wait-patience" data-step="patience">
+</span>
 </p>
+<!-- Voice: shown only where the browser can recognise speech. The microphone is open only while this plate is up. -->
+<button type="button" class="sw-voice" data-step="voice" aria-pressed="false" hidden>
+<media-icon family="stepwise" name="mic" class="sw-voice-icon">
+</media-icon>
+<span class="sw-voice-text" data-step="voice-label">Say “next”</span>
+</button>
 <div class="sw-wait-actions">
 <button type="button" class="sw-wait-button sw-wait-repeat" data-step="repeat">
 <media-icon family="stepwise" name="repeat" class="sw-wait-icon">
 </media-icon>
 <span class="sw-wait-text" data-step="repeat-label">Repeat</span>
 <kbd class="sw-key">R</kbd>
+</button>
+<button type="button" class="sw-wait-button sw-wait-slower" data-step="slower" aria-label="Slower: repeat at half speed">
+<span class="sw-wait-half" aria-hidden="true">½×</span>
+<span class="sw-wait-text" data-step="slower-label">Slower</span>
+<kbd class="sw-key">S</kbd>
 </button>
 <button type="button" class="sw-wait-button sw-wait-next" data-step="continue">
 <span class="sw-wait-next-number" data-step="continue-number">

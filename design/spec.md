@@ -8,7 +8,7 @@ For video that is followed, not only watched. Chapters are steps. The player hol
 | --- | --- | --- | --- |
 | Step tag | `.sw-tag` | top start | Number block (accent) and title. Folds to the number when the controls hide; opens for 4.2 s when a step begins. |
 | Intro | `.sw-intro` | top start, before first play | "5 steps", the title, the running time. |
-| Wait plate | `.sw-wait` | above the bar, centred, max 544 px | Heading, Repeat, Next step. Buttons 64 px tall (56 px under 480 px). |
+| Wait plate | `.sw-wait` | above the bar, centred, max 656 px | Heading with the wait line, voice button, then Repeat, Slower, Next step. Buttons 64 px tall (56 px under 480 px). |
 | Bar | `.sw-bar` | bottom | Segmented seek bar, then: back, play, next, time, Wait switch, mute, captions, settings, full screen. |
 | Hairline | `.sw-hairline` | bottom, controls hidden | 3 px, one segment per step. |
 
@@ -27,6 +27,9 @@ For video that is followed, not only watched. Chapters are steps. The player hol
 - Leaving a wait by Next step, play, or space starts the next step from its first frame. Repeat plays the finished step again.
 - Seeking during a wait ends the wait and leaves the video paused where the viewer put it.
 - At the end the plate offers Repeat step N and Start again, whether waiting is on or off.
+- Slower: repeats the step at 0.5×; the earlier speed returns when the step ends or the viewer leaves it. The tag shows ½× meanwhile.
+- The wait line: "Take your time." at once (or "Say “next” when you’re ready." with voice on), "Still here." at 20 s, "No rush. Really." at 60 s, "I can do this all day." at 3 min, one more at 10 min. "Nicely done." at the end. It is not announced; the wait itself is.
+- Voice: microphone open only while the plate is up; restarts after the browser's silence timeout; closes on any exit from the wait. States on the container: `off`, `on`, `listening`, `heard`.
 - Back a step: more than 2 s into a step, to its start; otherwise to the step before.
 - The controls stay up for as long as the plate is up.
 - Focus moves to Next step when the plate appears, if focus was already in the player. When the plate goes, focus returns to play.
@@ -36,6 +39,7 @@ For video that is followed, not only watched. Chapters are steps. The player hol
 | Player width | Change |
 | --- | --- |
 | under 640 px | Picture-in-picture leaves the top corner |
-| under 480 px | No numbers on segments; no Back a step; switch without its word; captions button in Settings only; Repeat is a square |
+| under 736 px | Slower shows ½× only; no key hints on the plate |
+| under 480 px | Plate is one row: voice (square), Repeat (square), Next step; no Slower button. No numbers on segments; no Back a step; switch without its word; captions button in Settings only; Repeat is a square |
 | under 384 px | Elapsed time only; no plate heading; tag hidden while the plate is up |
 | under 304 px | No Next step in the bar; no kicker on the plate |
