@@ -31,6 +31,10 @@
     --sw-radius: calc(var(--media-spacing) * 3);              /* 12px control radius */
     --sw-plate-radius: calc(var(--sw-radius) + var(--sw-pad)); /* outer = inner + padding */
     --sw-button: calc(var(--media-spacing) * 10);             /* 40px */
+    /* Distance from the frame, per side. Counter mode adds the device's safe areas to these. */
+    --sw-inset-top: var(--sw-edge);
+    --sw-inset-bottom: var(--sw-edge);
+    --sw-inset-x: var(--sw-edge);
 
     --sw-fg: var(--media-foreground);
     --sw-fg-muted: color-mix(in oklab, var(--media-foreground) 70%, transparent);
@@ -184,8 +188,8 @@
   /* ---------------------------------------------------------------- top right */
   .stepwise .sw-top {
     position: absolute;
-    inset-inline-end: var(--sw-edge);
-    top: var(--sw-edge);
+    inset-inline-end: var(--sw-inset-x);
+    top: var(--sw-inset-top);
     display: flex;
     gap: var(--media-spacing);
     pointer-events: auto;
@@ -210,12 +214,12 @@
      away it folds down to the number, and opens again for a moment whenever a new step begins. */
   .stepwise :is(.sw-tag, .sw-intro) {
     position: absolute;
-    inset-inline-start: var(--sw-edge);
-    top: var(--sw-edge);
+    inset-inline-start: var(--sw-inset-x);
+    top: var(--sw-inset-top);
     display: none;
     align-items: center;
     box-sizing: border-box;
-    max-width: calc(100% - var(--sw-edge) * 2 - var(--media-spacing) * 24);
+    max-width: calc(100% - var(--sw-inset-x) * 2 - var(--media-spacing) * 24);
     padding: var(--media-spacing);
     border-radius: calc(var(--media-spacing) * 3.5);
     background: var(--sw-plate);
@@ -300,8 +304,8 @@
   /* ---------------------------------------------------------------- dock */
   .stepwise .sw-dock {
     position: absolute;
-    inset-inline: var(--sw-edge);
-    bottom: var(--sw-edge);
+    inset-inline: var(--sw-inset-x);
+    bottom: var(--sw-inset-bottom);
     display: flex;
     flex-direction: column;
     gap: calc(var(--media-spacing) * 2.5);
@@ -718,8 +722,8 @@
      holds over bright footage as well as dark. */
   .stepwise .sw-hairline {
     position: absolute;
-    inset-inline: var(--sw-edge);
-    bottom: calc(var(--media-spacing) * 2);
+    inset-inline: var(--sw-inset-x);
+    bottom: calc(var(--sw-inset-bottom) - var(--media-spacing));
     display: flex;
     gap: 3px;
     height: 3px;
@@ -799,6 +803,22 @@
   }
   .stepwise .media-tooltip-shortcut:empty { display: none; }
 
+  /* ---------------------------------------------------------------- counter button */
+  /* A screen on a stand. It carries its name where there is room for it. */
+  .stepwise .sw-top .sw-counter-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: calc(var(--media-spacing) * 1.5);
+    width: auto;
+    min-width: var(--sw-button);
+    padding-inline: calc(var(--media-spacing) * 2.5) calc(var(--media-spacing) * 3);
+    font: 650 calc(var(--media-spacing) * 3.25) / 1 var(--sw-font);
+    white-space: nowrap;
+  }
+  .stepwise:not([data-steps]) .sw-counter-button { display: none; }
+  .stepwise .sw-counter-button[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--sw-accent); }
+
   /* ---------------------------------------------------------------- narrow players */
   @container media-root (width < 46rem) {
     /* Slower keeps its sign and gives its word to the step's name. */
@@ -808,6 +828,9 @@
   }
   @container media-root (width < 40rem) {
     .stepwise .sw-top .media-pip-button { display: none; }
+    /* The counter button keeps its sign and drops its word, until it is the way out. */
+    .stepwise:not([data-step-counter]) .sw-counter-button { padding-inline: 0; }
+    .stepwise:not([data-step-counter]) .sw-counter-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .stepwise .sw-wait-next-title { font-size: calc(var(--media-spacing) * 4); }
   }
   @container media-root (width < 30rem) {
@@ -823,9 +846,12 @@
     .stepwise .sw-play { width: calc(var(--media-spacing) * 11); }
     .stepwise .sw-center .media-button { width: calc(var(--media-spacing) * 15); height: calc(var(--media-spacing) * 15); }
     .stepwise .sw-tag-title { font-size: calc(var(--media-spacing) * 3.4); }
-    .stepwise :is(.sw-tag, .sw-intro) { max-width: calc(100% - var(--sw-edge) * 2); }
+    .stepwise :is(.sw-tag, .sw-intro) { max-width: calc(100% - var(--sw-inset-x) * 2); }
+    .stepwise[data-steps] :is(.sw-tag, .sw-intro) { max-width: calc(100% - var(--sw-inset-x) * 2 - var(--sw-button) - var(--media-spacing) * 2); }
+    .stepwise[data-steps][data-step-counter] :is(.sw-tag, .sw-intro) { max-width: calc(100% - var(--sw-inset-x) * 2 - var(--media-spacing) * 22); }
     .stepwise .sw-title { font-size: calc(var(--media-spacing) * 3.4); }
-    .stepwise .sw-top { display: none; }
+    /* A phone is where counter mode matters most: its button stays, the other three go. */
+    .stepwise .sw-top > :not(.sw-counter-button) { display: none; }
     /* Repeat keeps its name for assistive tech and shows its glyph only. */
     .stepwise .sw-wait-repeat { padding-inline: 0; width: calc(var(--media-spacing) * 16); justify-content: center; }
     .stepwise .sw-wait-repeat .sw-wait-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -864,6 +890,89 @@
   @container media-root (width < 19rem) {
     .stepwise .sw-wait-kicker { display: none; }
     .stepwise .sw-step-next { display: none; }
+  }
+
+  /* ---------------------------------------------------------------- counter mode */
+  /* The player fills the screen without the device's own full screen (an iPhone would swap in its
+     system player there). Everything is a little larger, the step tag a lot larger and always open:
+     this is read from an arm's length or more, by someone whose hands are busy. */
+  .stepwise.media-container[data-step-counter] {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    aspect-ratio: auto;
+    border-radius: 0;
+    background: #000;
+    color: var(--sw-fg);
+    --media-video-border-radius: 0px;
+    --media-spacing: clamp(4px, 0.5vmin + 2.2px, 6px);
+    --sw-safe-x: max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+    --sw-inset-top: calc(var(--sw-edge) + env(safe-area-inset-top, 0px));
+    --sw-inset-bottom: calc(var(--sw-edge) + env(safe-area-inset-bottom, 0px));
+    --sw-inset-x: calc(var(--sw-edge) + var(--sw-safe-x));
+  }
+  .stepwise.media-container[data-step-counter]::backdrop { background: #000; }
+  /* Counter mode is the full screen here. */
+  .stepwise[data-step-counter] .media-fullscreen-button { display: none; }
+
+  .stepwise[data-step-counter] :is(.sw-tag, .sw-intro) { border-radius: calc(var(--media-spacing) * 4.5); }
+  .stepwise[data-step-counter] .sw-tag-count {
+    min-width: calc(var(--media-spacing) * 11);
+    height: calc(var(--media-spacing) * 11);
+    padding-inline: calc(var(--media-spacing) * 2.5);
+    border-radius: calc(var(--media-spacing) * 3.5);
+    line-height: calc(var(--media-spacing) * 11);
+  }
+  .stepwise[data-step-counter] .sw-tag-number { font-size: calc(var(--media-spacing) * 7); }
+  .stepwise[data-step-counter] .sw-tag-total { font-size: calc(var(--media-spacing) * 4); }
+  .stepwise[data-step-counter] .sw-tag-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    padding-inline: calc(var(--media-spacing) * 3) calc(var(--media-spacing) * 3);
+    font-size: calc(var(--media-spacing) * 5.25);
+    line-height: 1.15;
+  }
+  .stepwise[data-step-counter] .sw-tag-slow { font-size: calc(var(--media-spacing) * 3.75); }
+  /* The tag does not fold away here: which step this is should be readable at any moment. */
+  .stepwise[data-step-counter]:not([data-step-flash], [data-step-waiting]) .sw-content:not([data-visible]) .sw-tag-title {
+    max-width: 60ch;
+    padding-inline: calc(var(--media-spacing) * 3) calc(var(--media-spacing) * 3);
+    opacity: 1;
+  }
+  .stepwise[data-step-counter][data-steps][data-step-started] .sw-tag { display: inline-flex; }
+
+  .stepwise[data-step-counter] .sw-wait-label { display: flex; font-size: calc(var(--media-spacing) * 3.25); }
+  .stepwise[data-step-counter] .sw-wait-patience { font-size: calc(var(--media-spacing) * 3.75); }
+  .stepwise[data-step-counter] .sw-wait-button { min-height: calc(var(--media-spacing) * 18); }
+  .stepwise[data-step-counter] .sw-wait-next-title { font-size: calc(var(--media-spacing) * 5.25); }
+  @media (orientation: portrait) {
+    /* Upright, the video leaves room above and below it, and the way forward takes that room: a row
+       to itself, as tall as a fist. The quieter choices share the row above it. */
+    .stepwise[data-step-counter][data-step-waiting] .sw-wait { display: flex; flex-wrap: wrap; }
+    .stepwise[data-step-counter] .sw-wait-actions { display: contents; }
+    .stepwise[data-step-counter] .sw-wait-label { flex: 1 0 100%; box-sizing: border-box; margin-inline: calc(var(--media-spacing) * 1.5); }
+    .stepwise[data-step-counter] .sw-wait-next { flex: 1 0 100%; min-height: calc(var(--media-spacing) * 22); }
+    .stepwise[data-step-counter] .sw-voice { flex: 1 1 0; justify-content: center; width: auto; gap: calc(var(--media-spacing) * 2); padding-inline: calc(var(--media-spacing) * 3); border-radius: var(--sw-radius); }
+    .stepwise[data-step-counter] .sw-voice-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+    .stepwise[data-step-counter] .sw-wait-slower { display: flex; }
+    .stepwise[data-step-counter] :is(.sw-voice, .sw-wait-repeat, .sw-wait-slower) { min-height: calc(var(--media-spacing) * 14); height: calc(var(--media-spacing) * 14); }
+  }
+  @container media-root (width < 30rem) {
+    @media (orientation: portrait) {
+      .stepwise[data-step-counter] .sw-wait-slower { flex: none; justify-content: center; width: calc(var(--media-spacing) * 16); padding-inline: 0; }
+    }
   }
 
   /* Touch: thumb-sized targets, and no keyboard hints. */

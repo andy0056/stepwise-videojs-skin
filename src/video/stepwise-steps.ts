@@ -26,7 +26,9 @@
  *   data-step-wait="on|off"  the switch
  *   data-step-slow           the step is being repeated at half speed
  *   data-step-hint           the wait line is carrying something that must be read (a list, a failure)
- *   data-step-awake          the screen is being kept on for this wait
+ *   data-step-awake          the screen is being kept on
+ *   data-step-counter        counter mode: the player fills the screen
+ *   data-step-hands="voice|knock"   which hands-free signal this device gets
  *
  * Busy hands. During a wait between steps, a tap or click anywhere on the picture goes on to the next
  * step, so a knuckle will do, and the screen is kept awake (Screen Wake Lock, where the browser has it)
@@ -43,10 +45,19 @@
  * "captions on", "captions off", "stop listening", and "what can I say" for the list. In short: "next" (also "continue", "go on", "ready"), "repeat" (also "again"),
  * "slower", and at the end "start again".
  *
+ * Counter mode. One button makes the player fill the screen without the device's own full screen (which
+ * on an iPhone hands the video to the system player and loses these controls), enlarges the step tag and
+ * the plate so they read from across a kitchen, and keeps the screen awake.
+ *
+ * Knocking. On a touch device the hands-free signal is two knocks on the counter, not a word: phone
+ * browsers are unreliable at restarting speech recognition, and a knock needs no speech service, so the
+ * sound never leaves the device. See knock.ts. `hands-free="voice|knock|off"` on <video-player> overrides.
+ *
  * Keys, when the player has focus: N next step, B back a step, R repeat this step, S repeat it
  * slower, W toggle waiting.
  * Events on the element: `stepchange` and `stepwait`, both with `detail: { index, step }`.
  */
+import { KnockDetector } from './knock';
 import {
   UIElement,
   PlayerController,
@@ -193,6 +204,14 @@ export class StepwiseStepsElement extends UIElement {
   #menuWasOpen = false;
   #micClosedAt = -Infinity;
   #playTimer = 0;
+  #hands: 'voice' | 'knock' | null = null;
+  #audio: AudioContext | null = null;
+  #knockStream: MediaStream | null = null;
+  #knockSource: MediaStreamAudioSourceNode | null = null;
+  #knockFrame = 0;
+  #counter = false;
+  #pageOverflow = '';
+  #pageScroll: [number, number] = [0, 0];
 
   /** The steps, in order. Empty when the video has no chapters. */
   get steps(): readonly Step[] {
@@ -227,7 +246,7 @@ export class StepwiseStepsElement extends UIElement {
     for (const name of [
       'tag', 'number', 'total', 'title', 'summary', 'summary-count', 'back', 'next', 'wait', 'plate', 'done', 'repeat',
       'repeat-label', 'continue', 'continue-kicker', 'continue-number', 'continue-title', 'hairline', 'status',
-      'patience', 'slower', 'voice', 'voice-label',
+      'patience', 'slower', 'voice', 'voice-label', 'counter', 'counter-label',
     ]) {
       this.#parts[name] = root.querySelector(`[data-step="${name}"]`);
     }
@@ -249,9 +268,33 @@ export class StepwiseStepsElement extends UIElement {
     this.#parts.slower?.addEventListener('click', () => this.repeat(true), { signal });
     this.#parts.voice?.addEventListener('click', () => this.#setVoice(!this.#voice, true), { signal });
 
-    // Voice is offered only where the browser can do it.
-    if (recognizerClass() && this.#parts.voice) {
+    // Hands-free is offered only where the device can do it, and in the form it does best.
+    const asked = this.getAttribute('hands-free') ?? this.closest('video-player')?.getAttribute('hands-free') ?? null;
+    const canKnock = !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== 'undefined';
+    const canSpeak = !!recognizerClass();
+    this.#hands =
+      asked === 'off'
+        ? null
+        : asked === 'knock' && canKnock
+          ? 'knock'
+          : asked === 'voice' && canSpeak
+            ? 'voice'
+            : this.#touch && canKnock
+              ? 'knock'
+              : canSpeak
+                ? 'voice'
+                : canKnock
+                  ? 'knock'
+                  : null;
+    if (this.#hands && this.#parts.voice) {
+      root.setAttribute('data-step-hands', this.#hands);
       this.#parts.voice.hidden = false;
+      this.#parts.voice.setAttribute(
+        'title',
+        this.#hands === 'knock'
+          ? this.#translate('stepwise.knock.promise', 'Listens only while the player is waiting; the sound stays on this device')
+          : this.#translate('stepwise.voice.promise', 'Listens only while the player is waiting')
+      );
       let voice: string | null = null;
       try {
         voice = localStorage.getItem(VOICE_KEY);
@@ -260,11 +303,11 @@ export class StepwiseStepsElement extends UIElement {
       }
       this.#setVoice(voice === 'on', false);
     }
+    this.#parts.counter?.addEventListener('click', () => this.#setCounter(!this.#counter), { signal });
     root.addEventListener('keydown', this.#onKeyDown, { signal });
     root.addEventListener('pointerdown', this.#onPointerDown, { signal, capture: true });
     root.addEventListener('click', this.#onTap, { signal });
     document.addEventListener('visibilitychange', this.#onVisibility, { signal });
-    this.#parts.voice?.setAttribute('title', this.#translate('stepwise.voice.promise', 'Listens only while the player is waiting'));
 
     this.#attachMedia();
   }
@@ -280,7 +323,10 @@ export class StepwiseStepsElement extends UIElement {
     clearTimeout(this.#playTimer);
     this.#clearPatience();
     this.#stopListening();
+    if (this.#counter) this.#setCounter(false);
     this.#letSleep();
+    void this.#audio?.close().catch(() => undefined);
+    this.#audio = null;
     this.#releaseLock?.();
     this.#releaseLock = null;
     this.#chapters = null;
@@ -313,7 +359,7 @@ export class StepwiseStepsElement extends UIElement {
   #play() {
     const media = this.#media;
     if (!media) return;
-    if (this.#recognizer) this.#stopListening();
+    if (this.#recognizer || this.#knockStream) this.#stopListening();
     const wait = Math.max(0, MIC_SETTLE_MS - (performance.now() - this.#micClosedAt));
     clearTimeout(this.#playTimer);
     const start = () => void Promise.resolve(media.play()).catch(() => undefined);
@@ -627,11 +673,9 @@ export class StepwiseStepsElement extends UIElement {
     root.setAttribute('data-step-waiting', this.#ended ? 'end' : 'step');
     this.#renderPlate();
     this.#startPatience();
-    if (this.#voice) void this.#listen();
-    if (!this.#ended) {
-      this.#wakeUntil = Date.now() + AWAKE_MS;
-      void this.#stayAwake();
-    }
+    if (this.#voice && !(this.#hands === 'knock' && this.#ended)) void this.#listen();
+    if (!this.#ended) this.#wakeUntil = Math.max(this.#wakeUntil, Date.now() + AWAKE_MS);
+    void this.#stayAwake();
     if (plate) plate.inert = false;
     // Deciding takes as long as it takes: hold the controls while the plate is up.
     this.#releaseLock ??= this.#controls.value?.requestControlsLock?.() ?? null;
@@ -643,7 +687,13 @@ export class StepwiseStepsElement extends UIElement {
       : `${this.#format('stepwise.status.done', 'Step {n} done.', index + 1)} ${this.#translate('stepwise.status.waiting', 'Waiting.')} ${
           next ? `${this.#translate('stepwise.next', 'Next step')}: ${next.title}.` : ''
         }`;
-    this.#say(this.#voice ? `${said} ${this.#translate('stepwise.status.voice', 'Listening for “next”.')}` : said);
+    this.#say(
+      !this.#voice
+        ? said
+        : this.#hands === 'knock'
+          ? `${said} ${this.#translate('stepwise.status.knock', 'Listening for two knocks.')}`
+          : `${said} ${this.#translate('stepwise.status.voice', 'Listening for “next”.')}`
+    );
 
     // A keyboard user already inside the player lands on the way forward.
     if (root.contains(document.activeElement) && !root.querySelector('media-menu[data-open]')) {
@@ -661,7 +711,6 @@ export class StepwiseStepsElement extends UIElement {
     this.#ended = false;
     this.#clearPatience();
     this.#stopListening();
-    this.#letSleep();
     root?.removeAttribute('data-step-hint');
     root?.removeAttribute('data-step-waiting');
     if (plate) plate.inert = true;
@@ -669,6 +718,7 @@ export class StepwiseStepsElement extends UIElement {
     this.#releaseLock = null;
     // Focus was on a button that has just gone; hand it to the play button rather than drop it.
     if (hadFocus) (root?.querySelector('.sw-play') as HTMLElement | null)?.focus({ preventScroll: true });
+    if (!this.#wantsAwake) this.#letSleep();
   }
 
   #setWait(on: boolean, fromViewer: boolean) {
@@ -707,7 +757,9 @@ export class StepwiseStepsElement extends UIElement {
       const show = () => {
         line.textContent =
           after === 0 && this.#voice
-            ? this.#translate('stepwise.patience.voice', 'Say “next”, “repeat”, “slower” or “back”.')
+            ? this.#hands === 'knock'
+              ? this.#translate('stepwise.patience.knock', 'Knock twice on the counter to go on.')
+              : this.#translate('stepwise.patience.voice', 'Say “next”, “repeat”, “slower” or “back”.')
             : after === 0 && this.#touch
               ? this.#translate('stepwise.patience.touch', 'Take your time. Tap anywhere to go on.')
               : this.#translate(key, fallback);
@@ -736,12 +788,21 @@ export class StepwiseStepsElement extends UIElement {
     } catch {
       /* not kept */
     }
+    if (on && this.#hands === 'knock') {
+      // Made here, inside the tap, so that phones let it run later without another tap.
+      try {
+        this.#audio ??= new AudioContext();
+        if (this.#waiting === -1) void this.#audio.suspend().catch(() => undefined);
+      } catch {
+        /* #listenForKnocks reports it */
+      }
+    }
     if (on && this.#waiting !== -1) {
       this.#startPatience();
       void this.#listen(true);
     } else if (!on) {
       this.#stopListening();
-      this.#say(this.#translate('stepwise.voice.off', 'Voice off'));
+      this.#say(this.#hands === 'knock' ? this.#translate('stepwise.knock.off', 'Knock listening off') : this.#translate('stepwise.voice.off', 'Voice off'));
     }
   }
 
@@ -751,16 +812,22 @@ export class StepwiseStepsElement extends UIElement {
     if (!root || !this.#parts.voice || this.#parts.voice.hidden) return;
     root.setAttribute('data-step-voice', state);
     if (!label) return;
+    const knock = this.#hands === 'knock';
     label.textContent =
       state === 'listening'
         ? this.#translate('stepwise.voice.listening', 'Listening')
         : state === 'heard'
-          ? `${this.#translate('stepwise.voice.heard', 'Heard')} “${heard}”`
-          : this.#translate('stepwise.voice.say', 'Say “next”');
+          ? knock
+            ? heard
+            : `${this.#translate('stepwise.voice.heard', 'Heard')} “${heard}”`
+          : knock
+            ? this.#translate('stepwise.knock.say', 'Knock twice')
+            : this.#translate('stepwise.voice.say', 'Say “next”');
   }
 
   /** Open the microphone for this wait. */
   async #listen(announce = false) {
+    if (this.#hands === 'knock') return this.#listenForKnocks(announce);
     const Recognition = recognizerClass();
     if (!Recognition || this.#waiting === -1) return;
     this.#stopListening();
@@ -879,6 +946,135 @@ export class StepwiseStepsElement extends UIElement {
     }
   }
 
+  /**
+   * Open the microphone for this wait and listen for two knocks. The sound is measured here, in the
+   * page, and goes nowhere: only its loudness is looked at, a few dozen times a second.
+   */
+  async #listenForKnocks(announce: boolean) {
+    if (this.#waiting === -1) return;
+    this.#stopListening();
+    const token = ++this.#listenToken;
+    let stream: MediaStream;
+    try {
+      // The phone's own tidying-up of the sound (echo, noise, level) is what would blur a knock.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (error) {
+      if (token !== this.#listenToken) return;
+      const name = (error as DOMException)?.name;
+      return this.#voiceFailed(name === 'NotFoundError' || name === 'OverconstrainedError' ? 'nomic' : 'blocked');
+    }
+    const drop = () => {
+      for (const track of stream.getTracks()) track.stop();
+    };
+    if (token !== this.#listenToken || this.#waiting === -1 || !this.#voice) return drop();
+
+    try {
+      this.#audio ??= new AudioContext();
+      if (this.#audio.state !== 'running') await this.#audio.resume();
+    } catch {
+      drop();
+      if (token === this.#listenToken) this.#voiceFailed('unavailable');
+      return;
+    }
+    if (token !== this.#listenToken || this.#waiting === -1 || !this.#voice) return drop();
+
+    const audio = this.#audio;
+    let source: MediaStreamAudioSourceNode;
+    let analyser: AnalyserNode;
+    try {
+      source = audio.createMediaStreamSource(stream);
+      analyser = audio.createAnalyser();
+      // A sixth of a second of sound is kept on hand, so a slow frame cannot drop a knock.
+      analyser.fftSize = 8192;
+      analyser.smoothingTimeConstant = 0;
+      source.connect(analyser); // and nowhere else: nothing is played back or recorded
+    } catch {
+      drop();
+      this.#voiceFailed('unavailable');
+      return;
+    }
+    this.#knockStream = stream;
+    this.#knockSource = source;
+
+    const rate = audio.sampleRate;
+    const slice = Math.max(128, Math.round(rate / 100)); // the sound is weighed about 10 ms at a time
+    const samples = new Float32Array(analyser.fftSize);
+    const detector = new KnockDetector();
+    let readTo = audio.currentTime; // everything before this moment has been weighed
+    let relabel = 0;
+    this.#voiceState('listening');
+    if (announce) {
+      this.#showHint(
+        this.#translate('stepwise.knock.promise.on', 'Knock twice on the counter to go on. The mic is open only while the player waits, and the sound stays on this device.')
+      );
+    }
+
+    const heard = (event: 'knock' | 'double') => {
+      clearTimeout(relabel);
+      if (event === 'knock') {
+        // Show that a knock landed, so the next one is knocked with confidence.
+        this.#voiceState('heard', this.#translate('stepwise.knock.one', 'Knock…'));
+        relabel = window.setTimeout(() => {
+          if (token === this.#listenToken) this.#voiceState('listening');
+        }, 1100);
+        return;
+      }
+      this.#voiceState('heard', this.#translate('stepwise.knock.two', 'Knock, knock'));
+      // Same order as for a spoken word: microphone closed first, then sound.
+      this.#closeKnocks();
+      this.#heardTimer = window.setTimeout(() => {
+        if (this.#waiting !== -1) this.continue();
+      }, MIC_SETTLE_MS);
+    };
+
+    const read = () => {
+      if (token !== this.#listenToken) return;
+      this.#knockFrame = requestAnimationFrame(read);
+      // Only the sound that arrived since the last look is weighed, in even slices, whatever the
+      // screen's frame rate is doing.
+      const now = audio.currentTime;
+      const arrived = Math.round((now - readTo) * rate);
+      if (arrived < slice) return;
+      const fresh = Math.min(arrived - (arrived % slice), samples.length - (samples.length % slice));
+      const tail = Math.min(arrived - fresh, samples.length - fresh); // newest samples, left for next time
+      analyser.getFloatTimeDomainData(samples);
+      const from = samples.length - tail - fresh;
+      const start = now - (tail + fresh) / rate;
+      readTo = now - tail / rate;
+      for (let offset = 0; offset < fresh; offset += slice) {
+        let peak = 0;
+        for (let i = from + offset; i < from + offset + slice; i++) {
+          const value = Math.abs(samples[i]);
+          if (value > peak) peak = value;
+        }
+        const event = detector.push(peak, (start + (offset + slice) / rate) * 1000);
+        if (event) heard(event);
+        if (event === 'double') return;
+      }
+    };
+    this.#knockFrame = requestAnimationFrame(read);
+  }
+
+  /** Close the microphone used for knocks, and let the audio system rest. */
+  #closeKnocks() {
+    cancelAnimationFrame(this.#knockFrame);
+    const stream = this.#knockStream;
+    if (!stream) return;
+    this.#listenToken++;
+    this.#knockStream = null;
+    this.#micClosedAt = performance.now();
+    try {
+      this.#knockSource?.disconnect();
+    } catch {
+      /* already gone */
+    }
+    this.#knockSource = null;
+    for (const track of stream.getTracks()) track.stop();
+    void this.#audio?.suspend().catch(() => undefined);
+  }
+
   /** Voice could not start. Switch it off, keep it off next time, and say why and what to do. */
   #voiceFailed(reason: 'blocked' | 'nomic' | 'unavailable') {
     this.#listenToken++;
@@ -895,18 +1091,27 @@ export class StepwiseStepsElement extends UIElement {
             this.#translate('stepwise.voice.blocked', 'Mic blocked'),
             this.#translate(
               'stepwise.voice.blocked.hint',
-              'Allow the microphone for this site, or open this page in Chrome or Safari.'
+              this.#hands === 'knock'
+                ? 'Allow the microphone for this site to use knocks. A tap anywhere still goes on.'
+                : 'Allow the microphone for this site, or open this page in Chrome or Safari.'
             ),
           ]
         : reason === 'nomic'
           ? [
               this.#translate('stepwise.voice.nomic', 'No microphone'),
-              this.#translate('stepwise.voice.nomic.hint', 'No microphone was found. Next step and the space bar still work.'),
+              this.#touch
+                ? this.#translate('stepwise.voice.nomic.touch', 'No microphone was found. A tap anywhere still goes on.')
+                : this.#translate('stepwise.voice.nomic.hint', 'No microphone was found. Next step and the space bar still work.'),
             ]
-          : [
+          : this.#hands === 'knock'
+            ? [
+                this.#translate('stepwise.knock.unavailable', 'Can’t listen'),
+                this.#translate('stepwise.knock.unavailable.hint', 'This browser can’t listen for knocks right now. A tap anywhere still goes on.'),
+              ]
+            : [
               this.#translate('stepwise.voice.unavailable', 'Voice unavailable'),
               this.#translate('stepwise.voice.unavailable.hint', 'This browser can’t recognise speech right now. Next step and the space bar still work.'),
-            ];
+              ];
     this.#root?.setAttribute('data-step-voice', 'blocked');
     const label = this.#parts['voice-label'];
     if (label) label.textContent = short;
@@ -918,6 +1123,7 @@ export class StepwiseStepsElement extends UIElement {
   #stopListening() {
     this.#listenToken++;
     clearTimeout(this.#heardTimer);
+    this.#closeKnocks();
     const recognizer = this.#recognizer;
     this.#recognizer = null;
     if (recognizer) this.#micClosedAt = performance.now();
@@ -1048,10 +1254,10 @@ export class StepwiseStepsElement extends UIElement {
   /** Keep the screen on while the player waits. A locked phone is no use to wet hands. */
   async #stayAwake() {
     const wakeLock = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeSentinel> } }).wakeLock;
-    if (!wakeLock || this.#wakeLock || document.visibilityState !== 'visible' || Date.now() >= this.#wakeUntil) return;
+    if (!wakeLock || this.#wakeLock || !this.#wantsAwake || document.visibilityState !== 'visible' || Date.now() >= this.#wakeUntil) return;
     try {
       const lock = await wakeLock.request('screen');
-      if (this.#waiting === -1 || this.#wakeLock) {
+      if (!this.#wantsAwake || this.#wakeLock) {
         void lock.release().catch(() => undefined);
         return;
       }
@@ -1081,8 +1287,69 @@ export class StepwiseStepsElement extends UIElement {
   }
 
   #onVisibility = () => {
-    if (document.visibilityState === 'visible' && this.#waiting !== -1 && !this.#ended) void this.#stayAwake();
+    if (document.visibilityState === 'visible') void this.#stayAwake();
   };
+
+  /** The screen should stay on during a wait between steps, and for as long as counter mode is on. */
+  get #wantsAwake(): boolean {
+    return this.#counter || (this.#waiting !== -1 && !this.#ended);
+  }
+
+  // ---------------------------------------------------------------- counter mode
+
+  /**
+   * Fill the screen, without the device's own full screen: on an iPhone that would hand the video to
+   * the system player and these controls would be gone. The player goes into the top layer where the
+   * browser has one, so nothing on the page around it can clip or cover it.
+   */
+  #setCounter(on: boolean) {
+    const root = this.#root as (HTMLElement & { showPopover?: () => void; hidePopover?: () => void }) | null;
+    if (!root || on === this.#counter) return;
+    this.#counter = on;
+    const page = document.documentElement;
+    if (on) {
+      root.toggleAttribute('data-step-counter', true);
+      try {
+        root.setAttribute('popover', 'manual');
+        root.showPopover?.();
+      } catch {
+        root.removeAttribute('popover'); // no top layer here: fixed positioning still fills the window
+      }
+      if (!root.matches(':popover-open')) root.removeAttribute('popover');
+      this.#pageOverflow = page.style.overflow;
+      this.#pageScroll = [window.scrollX, window.scrollY];
+      page.style.overflow = 'hidden';
+      this.#wakeUntil = Date.now() + 4 * AWAKE_MS;
+      void this.#stayAwake();
+    } else {
+      try {
+        if (root.matches(':popover-open')) root.hidePopover?.();
+      } catch {
+        /* not open */
+      }
+      root.removeAttribute('popover');
+      root.removeAttribute('data-step-counter');
+      page.style.overflow = this.#pageOverflow;
+      window.scrollTo(this.#pageScroll[0], this.#pageScroll[1]); // the page is where it was left
+      if (!this.#wantsAwake) this.#letSleep();
+    }
+    const button = this.#parts.counter;
+    button?.setAttribute('aria-pressed', String(on));
+    if (this.#parts['counter-label']) {
+      this.#parts['counter-label'].textContent = on
+        ? this.#translate('stepwise.counter.exit', 'Exit')
+        : this.#translate('stepwise.counter', 'Counter mode');
+    }
+    this.#say(on ? this.#translate('stepwise.counter.on', 'Counter mode on') : this.#translate('stepwise.counter.off', 'Counter mode off'));
+  }
+
+  /** Whether the player is filling the screen in counter mode. */
+  get counterMode(): boolean {
+    return this.#counter;
+  }
+  set counterMode(on: boolean) {
+    this.#setCounter(on);
+  }
 
   /** Whether the screen is being kept awake for the current wait. */
   get awake(): boolean {
@@ -1093,6 +1360,11 @@ export class StepwiseStepsElement extends UIElement {
 
   #onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isEditable(event.target)) return;
+    if (event.key === 'Escape' && this.#counter && !this.#root?.querySelector('media-menu[data-open]')) {
+      this.#setCounter(false);
+      event.preventDefault();
+      return;
+    }
     if (!this.#active) return;
     const key = event.key.toLowerCase();
     if (key === 'n') this.next();

@@ -6,7 +6,9 @@ Most video is watched. Some of it is followed, by someone whose hands and eyes a
 
 - **Chapters are steps.** The seek bar has one segment per step, each with its number.
 - **It waits.** When a step ends the video holds on that step's last frame, the finished result, and offers two large buttons: *Repeat* and *Next step*. Nothing moves until the viewer chooses. The space bar and the play button carry on too.
-- **Say "next".** Where the browser can recognise speech, the plate has a voice button. Turn it on and say "next", "repeat" or "slower". The microphone is open only while the player is waiting.
+- **Counter mode.** One button fills the screen, enlarges the step tag and the way forward so they read from across a kitchen, and keeps the screen awake. It does not use the device's own full screen, because on an iPhone that swaps in the system player and the steps would be gone.
+- **Knock twice.** On a phone or tablet the hands-free signal is two knocks on the counter. Only loudness is measured, in the page, while the player is waiting; no sound leaves the device.
+- **Say "next".** On a computer whose browser can recognise speech, the same button listens for "next", "repeat" or "slower" instead. The microphone is open only while the player is waiting.
 - **Busy hands.** While it waits, a tap or click anywhere on the picture goes on to the next step, so a knuckle will do. The screen is kept awake during the wait (Screen Wake Lock, where the browser has it) for up to half an hour, so a phone on the counter does not lock itself mid-recipe.
 - **Repeat, slower.** Replays the step at half speed, then restores the viewer's own speed.
 - **You always know where you are.** A tag in the corner shows the step number and title. With the controls hidden it folds down to the number, and a hairline along the bottom keeps the place.
@@ -54,10 +56,27 @@ Fold the corners in
 | C, F, I | Captions, full screen, picture in picture |
 | 0–9, Home, End | Jump to a tenth of the video, the start, the end |
 
+## Counter mode
+
+- The button sits in the top corner (the only top-corner button kept on a phone). `Esc` and the same button leave it. `stepwiseSteps.counterMode = true` does the same from code.
+- The player goes into the browser's top layer (Popover API, with fixed positioning as the fallback), so nothing on the host page can clip or cover it. The page's scroll position is restored on the way out.
+- `--media-spacing` grows with the screen (up to 1.5×), the step tag roughly doubles and never folds away, and the device's safe areas are respected.
+- Upright, the plate stacks: the quieter choices in one row, *Next step* in a row of its own, 88 px tall or more.
+- The screen wake lock is held for as long as counter mode is on (capped at two hours), not only during waits.
+- The full screen button is hidden while it is on.
+
+## Knocking
+
+- Offered on touch devices, where browser speech recognition is unreliable (on an iPhone it often will not restart for the second wait). `hands-free="knock"`, `"voice"` or `"off"` on `<video-player>` overrides the choice.
+- The signal is a shape, not a word: two short, sharp sounds between 110 and 750 ms apart, with quiet before and after. One knock, three knocks, chopping, talking and a tap left running are not it. If steady noise starts up (an extractor hood), it becomes the new background and knocks are listened for above it.
+- A knock has a hard edge: it is at its loudest within 20 ms and mostly gone within 130 ms. A spoken syllable swells and lingers, which is how "uh-huh" is told from knock, knock.
+- The microphone opens when the wait plate appears and closes before the video makes sound again, as for voice. The sound goes to an analyser in the page and nowhere else; nothing is recorded or sent. The button shows "Knock…" when the first one lands.
+- The logic is in `src/video/knock.ts`, which knows nothing about microphones and can be tested with numbers alone.
+
 ## Voice
 
 - The promise, shown on the plate when voice is turned on and as the button's tooltip: the mic is open only while the player waits.
-- Off by default, and shown only where `SpeechRecognition` exists. Browsers without it (Firefox today) never see the button.
+- Off by default, and shown on non-touch devices where `SpeechRecognition` exists. Browsers without it (Firefox today) get knocking instead.
 - The microphone opens when the wait plate appears and closes when it goes. The video is paused for that whole time, so its own sound cannot trigger a command.
 - If the browser reports an on-device model for the language, recognition is asked to stay on the device (`processLocally`). Otherwise the browser's own speech service is used. The skin never receives audio; it reads the recognised words and matches a short list.
 - Commands, all spoken while the player waits:

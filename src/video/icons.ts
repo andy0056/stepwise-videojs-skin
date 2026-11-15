@@ -50,6 +50,8 @@ const speed = svg(`<path ${line} d="M3 13a7 7 0 1 1 14 0"/><path ${line} d="m10 
 const speech = captionsOff;
 const quality = svg(`<path ${line} d="M4 15v-3M8 15V9M12 15V6M16 15V4"/>`);
 const audio = volumeLow;
+// A screen leaning back on a counter top. (A screen over a triangle would read as AirPlay.)
+const counter = svg(`<rect ${line} x="5" y="2.75" width="10.5" height="11" rx="2.25" transform="rotate(-9 10.25 8.25)"/><path ${line} d="M2.5 17.25h15"/>`);
 const mic = svg(`<rect ${line} x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path ${line} d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/>`);
 const list = svg(`<path ${line} d="M8 5h9M8 10h9M8 15h9"/><circle ${solid} cx="3.8" cy="5" r="1.3"/><circle ${solid} cx="3.8" cy="10" r="1.3"/><circle ${solid} cx="3.8" cy="15" r="1.3"/>`);
 const spinner = svg(
@@ -66,6 +68,7 @@ registerIcons('stepwise', {
   'cast-enter': castEnter,
   'cast-exit': castExit,
   check,
+  counter,
   chevron,
   'fullscreen-enter': fullscreenEnter,
   'fullscreen-exit': fullscreenExit,

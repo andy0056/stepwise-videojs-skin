@@ -41,6 +41,14 @@
 
 <!-- Top right: device buttons. -->
 <media-controls-group class="sw-top">
+<button type="button" class="media-button sw-counter-button" id="sw-counter" data-step="counter" aria-pressed="false">
+<media-icon family="stepwise" name="counter" class="media-button-icon">
+</media-icon>
+<span class="sw-counter-text" data-step="counter-label">Counter mode</span>
+</button>
+<media-tooltip trigger="sw-counter" side="bottom" class="media-popup media-popup-safe-area media-tooltip-popup">
+<media-text token="stepwise.counter.hint">Fill the screen, larger steps, stays awake</media-text>
+</media-tooltip>
 <media-airplay-button class="media-button media-airplay-button" id="sw-airplay-trigger">
 <media-icon family="stepwise" name="airplay-enter" class="media-button-icon media-airplay-button-enter-icon">
 </media-icon>

@@ -65,6 +65,10 @@ export function createPlayer(): HTMLElement {
     player.setAttribute('content-title', plain ? 'A video without steps' : 'Fold a paper boat');
   }
 
+  // `?hands=knock` or `?hands=voice` tries the other hands-free signal on this device; `?hands=off` hides both.
+  const hands = /[?&]hands=(knock|voice|off)\b/.exec(location.search)?.[1];
+  if (hands) player.setAttribute('hands-free', hands);
+
   player.innerHTML = skinTemplate.replace(MEDIA_PLACEHOLDER, media);
   return player;
 }
