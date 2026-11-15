@@ -16,11 +16,22 @@ interface Clip {
   title: string;
   playbackId: string;
   chapters: string;
+  /** Captions file in `public/`, when Mux has no text track for the clip. */
+  captions?: string;
   /** Second shown before the video starts. */
   poster: number;
 }
 
 const CLIPS: Clip[] = [
+  {
+    // Anirudh explains the player in five steps. Each step ends on a held pose: that is the frame the wait rests on.
+    key: 'intro',
+    title: 'Meet Stepwise',
+    playbackId: '',
+    chapters: './stepwise-intro-chapters.vtt',
+    captions: './stepwise-intro.vtt',
+    poster: 3.2,
+  },
   {
     key: 'stars',
     title: 'How are we made of star stuff?',
@@ -55,7 +66,7 @@ export function createPlayer(): HTMLElement {
 
   let media: string;
   if (clip) {
-    media = `<mux-video src="https://stream.mux.com/${clip.playbackId}.m3u8" playsinline crossorigin><track kind="chapters" label="English" srclang="en" src="${clip.chapters}" default></mux-video>`;
+    media = `<mux-video src="https://stream.mux.com/${clip.playbackId}.m3u8" playsinline crossorigin>${clip.captions ? `<track kind="captions" label="English" srclang="en" src="${clip.captions}">` : ''}<track kind="chapters" label="English" srclang="en" src="${clip.chapters}" default></mux-video>`;
     player.setAttribute('poster', `https://image.mux.com/${clip.playbackId}/thumbnail.webp?time=${clip.poster}`);
     player.setAttribute('content-title', clip.title);
   } else {
