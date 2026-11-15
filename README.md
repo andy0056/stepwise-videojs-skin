@@ -101,6 +101,24 @@ Fold the corners in
 - The microphone is closed, and given a third of a second to settle, before the video makes sound again. A phone that is still recording when playback resumes can route sound to its call speaker, and a Bluetooth headset has to leave call mode first. Headsets can still take a second or two to switch back; that part belongs to the device.
 - `<stepwise-steps voice-lang="en-GB">` sets the recognition language (default `en-US`). The command words are translatable strings.
 
+## One element for any site
+
+`npm run build:embed` writes `dist-embed/`: one script, one stylesheet and the on-demand translation files. Copy the folder to a site and load both files; no build step is needed there.
+
+```html
+<link rel="stylesheet" href="/stepwise/stepwise-player.css">
+<script type="module" src="/stepwise/stepwise-player.js"></script>
+
+<stepwise-player
+  playback-id="…"
+  chapters="/stepwise/chapters.vtt"
+  captions="/stepwise/captions.vtt"
+  poster-time="3"
+  video-title="…"></stepwise-player>
+```
+
+`src` takes a plain video file instead of a Mux playback ID, and `hands-free="knock|voice|off"` overrides the hands-free signal. The stylesheet hands every property inside the player back to the skin's cascade layers, so a host page's unlayered resets cannot restyle the controls. Counter mode uses the browser's top layer, so a host page's transforms or clipping do not trap it.
+
 ## Design notes
 
 - **One accent, one job.** Green means progress and the way forward: the filled segments, the step number, *Next step*. Play is solid white. Everything else is line work on a dark plate.
