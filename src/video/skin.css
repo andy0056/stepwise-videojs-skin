@@ -460,7 +460,7 @@
     font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
-  .stepwise .sw-wait-next-copy { display: grid; min-width: 0; gap: 1px; }
+  .stepwise .sw-wait-next-copy { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 0; min-width: 0; gap: 1px; }
   .stepwise .sw-wait-kicker {
     font-size: calc(var(--media-spacing) * 2.75);
     font-weight: 750;
@@ -468,7 +468,7 @@
     text-transform: uppercase;
     opacity: 0.74;
   }
-  .stepwise .sw-wait-kicker { white-space: nowrap; }
+  .stepwise .sw-wait-kicker { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   /* A step's name is what the viewer is choosing; it gets two lines before it is cut. */
   .stepwise .sw-wait-next-title {
     display: -webkit-box;
@@ -481,7 +481,7 @@
     letter-spacing: -0.01em;
     line-height: 1.15;
   }
-  .stepwise .sw-wait-arrow { margin-inline-start: auto; }
+  .stepwise .sw-wait-arrow { flex: none; margin-inline-start: auto; }
 
   /* ---------------------------------------------------------------- bar */
   .stepwise .sw-bar {

@@ -7,6 +7,7 @@ Most video is watched. Some of it is followed, by someone whose hands and eyes a
 - **Chapters are steps.** The seek bar has one segment per step, each with its number.
 - **It waits.** When a step ends the video holds on that step's last frame, the finished result, and offers two large buttons: *Repeat* and *Next step*. Nothing moves until the viewer chooses. The space bar and the play button carry on too.
 - **Say "next".** Where the browser can recognise speech, the plate has a voice button. Turn it on and say "next", "repeat" or "slower". The microphone is open only while the player is waiting.
+- **Busy hands.** While it waits, a tap or click anywhere on the picture goes on to the next step, so a knuckle will do. The screen is kept awake during the wait (Screen Wake Lock, where the browser has it) for up to half an hour, so a phone on the counter does not lock itself mid-recipe.
 - **Repeat, slower.** Replays the step at half speed, then restores the viewer's own speed.
 - **You always know where you are.** A tag in the corner shows the step number and title. With the controls hidden it folds down to the number, and a hairline along the bottom keeps the place.
 - **It is still an ordinary player.** A switch turns the waiting off. A video with no chapters gets none of the step controls.
@@ -55,6 +56,7 @@ Fold the corners in
 
 ## Voice
 
+- The promise, shown on the plate when voice is turned on and as the button's tooltip: the mic is open only while the player waits.
 - Off by default, and shown only where `SpeechRecognition` exists. Browsers without it (Firefox today) never see the button.
 - The microphone opens when the wait plate appears and closes when it goes. The video is paused for that whole time, so its own sound cannot trigger a command.
 - If the browser reports an on-device model for the language, recognition is asked to stay on the device (`processLocally`). Otherwise the browser's own speech service is used. The skin never receives audio; it reads the recognised words and matches a short list.

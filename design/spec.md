@@ -31,6 +31,8 @@ For video that is followed, not only watched. Chapters are steps. The player hol
 - The wait line: "Take your time." at once (or "Say “next” when you’re ready." with voice on), "Still here." at 20 s, "No rush. Really." at 60 s, "I can do this all day." at 3 min, one more at 10 min. "Nicely done." at the end. It is not announced; the wait itself is.
 - Voice commands: next, repeat, slower / half speed, normal speed, back, step N, start again, mute, sound on, captions on, captions off, stop listening, what can I say. Mute, captions and the list keep the wait going; the button shows what was heard for 1.4 s and listening continues. A step number past the end answers "There are N steps."
 - Voice: microphone open only while the plate is up; restarts after the browser's silence timeout; closes on any exit from the wait. States on the container: `off`, `on`, `listening`, `heard`.
+- Tap anywhere: during a wait between steps, a tap or click on the picture (not on a control, and not the press that closes a menu) is Next step. Not at the end of the video. On touch the kicker reads "Tap anywhere" and the first wait line says so.
+- Awake: a screen wake lock is held during a wait between steps, re-requested when the page becomes visible again, and released when the wait ends or after 30 minutes.
 - Back a step: more than 2 s into a step, to its start; otherwise to the step before.
 - The controls stay up for as long as the plate is up.
 - Focus moves to Next step when the plate appears, if focus was already in the player. When the plate goes, focus returns to play.

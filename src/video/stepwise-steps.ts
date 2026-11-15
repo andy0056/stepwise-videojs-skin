@@ -26,6 +26,11 @@
  *   data-step-wait="on|off"  the switch
  *   data-step-slow           the step is being repeated at half speed
  *   data-step-hint           the wait line is carrying something that must be read (a list, a failure)
+ *   data-step-awake          the screen is being kept on for this wait
+ *
+ * Busy hands. During a wait between steps, a tap or click anywhere on the picture goes on to the next
+ * step, so a knuckle will do, and the screen is kept awake (Screen Wake Lock, where the browser has it)
+ * for up to half an hour, so a phone on the counter does not lock itself mid-recipe.
  *   data-step-voice="off|on|listening|heard|blocked"   spoken commands (absent where speech recognition is missing)
  *
  * Voice. Where the browser can recognise speech, the plate carries a "Say next" button. It is off
@@ -72,6 +77,8 @@ interface MediaLike extends EventTarget {
 
 const STORAGE_KEY = 'stepwise:wait';
 const VOICE_KEY = 'stepwise:voice';
+/** How long a wait keeps the screen awake before letting the device sleep after all. */
+const AWAKE_MS = 30 * 60 * 1000;
 /** Speed of a slower repeat. */
 const SLOW_RATE = 0.5;
 /** What the plate says as a wait goes on: seconds into the wait, translation key, English. */
@@ -109,6 +116,12 @@ const NUMBER_WORDS: Record<string, number> = {
   nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
   eighteen: 18, nineteen: 19, twenty: 20,
 };
+
+/** The part of a screen wake lock this element uses. */
+interface WakeSentinel {
+  release(): Promise<void>;
+  addEventListener(type: 'release', listener: () => void): void;
+}
 
 interface Command {
   /** What to show as heard. */
@@ -172,6 +185,10 @@ export class StepwiseStepsElement extends UIElement {
   #recognizer: Recognizer | null = null;
   #listenToken = 0;
   #heardTimer = 0;
+  #wakeLock: WakeSentinel | null = null;
+  #wakeUntil = 0;
+  #wakeTimer = 0;
+  #menuWasOpen = false;
 
   /** The steps, in order. Empty when the video has no chapters. */
   get steps(): readonly Step[] {
@@ -240,6 +257,10 @@ export class StepwiseStepsElement extends UIElement {
       this.#setVoice(voice === 'on', false);
     }
     root.addEventListener('keydown', this.#onKeyDown, { signal });
+    root.addEventListener('pointerdown', this.#onPointerDown, { signal, capture: true });
+    root.addEventListener('click', this.#onTap, { signal });
+    document.addEventListener('visibilitychange', this.#onVisibility, { signal });
+    this.#parts.voice?.setAttribute('title', this.#translate('stepwise.voice.promise', 'Listens only while the player is waiting'));
 
     this.#attachMedia();
   }
@@ -254,6 +275,7 @@ export class StepwiseStepsElement extends UIElement {
     clearTimeout(this.#heardTimer);
     this.#clearPatience();
     this.#stopListening();
+    this.#letSleep();
     this.#releaseLock?.();
     this.#releaseLock = null;
     this.#chapters = null;
@@ -589,6 +611,10 @@ export class StepwiseStepsElement extends UIElement {
     this.#renderPlate();
     this.#startPatience();
     if (this.#voice) void this.#listen();
+    if (!this.#ended) {
+      this.#wakeUntil = Date.now() + AWAKE_MS;
+      void this.#stayAwake();
+    }
     if (plate) plate.inert = false;
     // Deciding takes as long as it takes: hold the controls while the plate is up.
     this.#releaseLock ??= this.#controls.value?.requestControlsLock?.() ?? null;
@@ -618,6 +644,7 @@ export class StepwiseStepsElement extends UIElement {
     this.#ended = false;
     this.#clearPatience();
     this.#stopListening();
+    this.#letSleep();
     root?.removeAttribute('data-step-hint');
     root?.removeAttribute('data-step-waiting');
     if (plate) plate.inert = true;
@@ -664,7 +691,9 @@ export class StepwiseStepsElement extends UIElement {
         line.textContent =
           after === 0 && this.#voice
             ? this.#translate('stepwise.patience.voice', 'Say “next”, “repeat”, “slower” or “back”.')
-            : this.#translate(key, fallback);
+            : after === 0 && this.#touch
+              ? this.#translate('stepwise.patience.touch', 'Take your time. Tap anywhere to go on.')
+              : this.#translate(key, fallback);
       };
       if (after === 0) show();
       else this.#patienceTimers.push(window.setTimeout(show, after * 1000));
@@ -760,7 +789,11 @@ export class StepwiseStepsElement extends UIElement {
         this.#voiceState('listening');
         // Said aloud only when the viewer has just switched voice on; at the start of a wait the
         // wait's own announcement says that the player is listening.
-        if (announce) this.#say(this.#translate('stepwise.voice.listening', 'Listening'));
+        if (announce) {
+          this.#showHint(
+            this.#translate('stepwise.voice.promise.on', 'The mic is open only while the player waits. Say “next”, “repeat”, “slower” or “back”.')
+          );
+        }
       }
     });
     let handled = -1; // results up to this index have already produced a command
@@ -956,6 +989,72 @@ export class StepwiseStepsElement extends UIElement {
     this.#say(text);
   }
 
+  // ---------------------------------------------------------------- busy hands
+
+  /** A finger is the pointer here, or the nearest thing to one. */
+  get #touch(): boolean {
+    return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  }
+
+  #onPointerDown = () => {
+    // A press that closes an open menu is only that.
+    this.#menuWasOpen = !!this.#root?.querySelector('media-menu[data-open]');
+  };
+
+  /** During a wait between steps the whole picture is the Next button: a knuckle will do. */
+  #onTap = (event: MouseEvent) => {
+    if (this.#waiting === -1 || this.#ended || this.#menuWasOpen || event.defaultPrevented) return;
+    const target = event.target as Element | null;
+    if (!target?.closest) return;
+    // Anything that is itself a control keeps its own meaning.
+    if (target.closest('.sw-dock, .sw-top, .sw-center, media-menu, .media-popup, button, a, input, [role="slider"], [role="menu"]')) return;
+    this.continue();
+  };
+
+  /** Keep the screen on while the player waits. A locked phone is no use to wet hands. */
+  async #stayAwake() {
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeSentinel> } }).wakeLock;
+    if (!wakeLock || this.#wakeLock || document.visibilityState !== 'visible' || Date.now() >= this.#wakeUntil) return;
+    try {
+      const lock = await wakeLock.request('screen');
+      if (this.#waiting === -1 || this.#wakeLock) {
+        void lock.release().catch(() => undefined);
+        return;
+      }
+      this.#wakeLock = lock;
+      this.#root?.toggleAttribute('data-step-awake', true);
+      lock.addEventListener('release', () => {
+        // The browser lets go when the page is hidden; `visibilitychange` asks again.
+        if (this.#wakeLock === lock) {
+          this.#wakeLock = null;
+          this.#root?.removeAttribute('data-step-awake');
+        }
+      });
+      // Not for ever: after half an hour the device may sleep.
+      clearTimeout(this.#wakeTimer);
+      this.#wakeTimer = window.setTimeout(() => this.#letSleep(), Math.max(this.#wakeUntil - Date.now(), 0));
+    } catch {
+      /* refused (low battery, power saving): the wait carries on without it */
+    }
+  }
+
+  #letSleep() {
+    clearTimeout(this.#wakeTimer);
+    const lock = this.#wakeLock;
+    this.#wakeLock = null;
+    this.#root?.removeAttribute('data-step-awake');
+    void lock?.release().catch(() => undefined);
+  }
+
+  #onVisibility = () => {
+    if (document.visibilityState === 'visible' && this.#waiting !== -1 && !this.#ended) void this.#stayAwake();
+  };
+
+  /** Whether the screen is being kept awake for the current wait. */
+  get awake(): boolean {
+    return this.#wakeLock !== null;
+  }
+
   // ---------------------------------------------------------------- keys
 
   #onKeyDown = (event: KeyboardEvent) => {
@@ -1046,7 +1145,11 @@ export class StepwiseStepsElement extends UIElement {
     } else {
       if (p.done) p.done.textContent = this.#format('stepwise.done', 'Step {n} of {total} done', index + 1, steps.length);
       if (p['repeat-label']) p['repeat-label'].textContent = this.#translate('stepwise.repeat', 'Repeat');
-      if (p['continue-kicker']) p['continue-kicker'].textContent = this.#translate('stepwise.next', 'Next step');
+      if (p['continue-kicker']) {
+        p['continue-kicker'].textContent = this.#touch
+          ? this.#translate('stepwise.next.touch', 'Tap anywhere')
+          : this.#translate('stepwise.next', 'Next step');
+      }
       if (p['continue-number']) p['continue-number'].textContent = String(index + 2);
       if (p['continue-title']) p['continue-title'].textContent = next?.title ?? '';
     }
