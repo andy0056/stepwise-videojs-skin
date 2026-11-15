@@ -59,7 +59,7 @@ Fold the corners in
 - The microphone opens when the wait plate appears and closes when it goes. The video is paused for that whole time, so its own sound cannot trigger a command.
 - If the browser reports an on-device model for the language, recognition is asked to stay on the device (`processLocally`). Otherwise the browser's own speech service is used. The skin never receives audio; it reads the recognised words and matches a short list.
 - Words: "next", "continue", "go on", "carry on", "ready"; "repeat", "again", "once more"; "slower", "slowly"; and after the last step "start again", "restart", "from the top".
-- A blocked microphone or a missing service turns voice off and says so on the button.
+- Turning voice on asks for the microphone with the browser's own prompt. If the browser, the operating system or an embedding page refuses, voice turns itself off, stays off on the next visit, and the plate says what happened and what to do. A missing microphone and a missing speech service each get their own message.
 - `<stepwise-steps voice-lang="en-GB">` sets the recognition language (default `en-US`). The command words are translatable strings.
 
 ## Design notes

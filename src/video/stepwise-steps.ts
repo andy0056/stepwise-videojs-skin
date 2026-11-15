@@ -25,13 +25,14 @@
  *   data-step-waiting        waiting at the end of a step (value "end" after the last one)
  *   data-step-wait="on|off"  the switch
  *   data-step-slow           the step is being repeated at half speed
- *   data-step-voice="off|on|listening|heard"   spoken commands (absent where speech recognition is missing)
+ *   data-step-voice="off|on|listening|heard|blocked"   spoken commands (absent where speech recognition is missing)
  *
  * Voice. Where the browser can recognise speech, the plate carries a "Say next" button. It is off
  * until the viewer turns it on. The microphone is opened only while the plate is up, when the video
  * is paused, so the video's own sound can never trigger it, and it is closed the moment the wait ends.
  * Recognition runs on the device where the browser offers that; otherwise the browser's own speech
- * service is used. Words: "next" (also "continue", "go on", "ready"), "repeat" (also "again"),
+ * service is used. Turning voice on asks for the microphone in the ordinary way; if the browser or the
+ * page it is embedded in refuses, the plate says so and says what to do. Words: "next" (also "continue", "go on", "ready"), "repeat" (also "again"),
  * "slower", and at the end "start again".
  *
  * Keys, when the player has focus: N next step, B back a step, R repeat this step, S repeat it
@@ -667,7 +668,7 @@ export class StepwiseStepsElement extends UIElement {
     }
   }
 
-  #voiceState(state: 'off' | 'on' | 'listening' | 'heard', heard = '') {
+  #voiceState(state: 'off' | 'on' | 'listening' | 'heard' | 'blocked', heard = '') {
     const root = this.#root;
     const label = this.#parts['voice-label'];
     if (!root || !this.#parts.voice || this.#parts.voice.hidden) return;
@@ -697,6 +698,23 @@ export class StepwiseStepsElement extends UIElement {
       local = false;
     }
     if (token !== this.#listenToken || this.#waiting === -1 || !this.#voice) return;
+
+    // The viewer has just pressed the button: ask for the microphone in the ordinary way, so the
+    // browser shows its own prompt and a refusal can be told apart from a missing speech service.
+    // Nothing is recorded; the stream is closed as soon as the answer is known.
+    if (announce && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        for (const track of stream.getTracks()) track.stop();
+      } catch (error) {
+        const name = (error as DOMException)?.name;
+        if (token !== this.#listenToken) return;
+        if (name === 'NotAllowedError' || name === 'SecurityError') return this.#voiceFailed('blocked');
+        if (name === 'NotFoundError' || name === 'OverconstrainedError') return this.#voiceFailed('nomic');
+        // Anything else: let the recogniser try, and report what it finds.
+      }
+      if (token !== this.#listenToken || this.#waiting === -1 || !this.#voice) return;
+    }
 
     const recognizer = new Recognition();
     recognizer.lang = lang;
@@ -732,17 +750,9 @@ export class StepwiseStepsElement extends UIElement {
       if (token !== this.#listenToken) return;
       const error = (event as Event & { error?: string }).error;
       if (error === 'no-speech' || error === 'aborted') return; // `end` follows, and listening resumes
-      // Blocked, no service, or no model for the language: stop offering to listen.
-      this.#listenToken++;
-      this.#recognizer = null;
-      this.#setVoice(false, false);
-      const blocked = error === 'not-allowed' || error === 'service-not-allowed';
-      const text = blocked
-        ? this.#translate('stepwise.voice.blocked', 'Microphone is blocked')
-        : this.#translate('stepwise.voice.unavailable', 'Voice is not available');
-      const label = this.#parts['voice-label'];
-      if (label) label.textContent = text;
-      this.#say(text);
+      this.#voiceFailed(
+        error === 'not-allowed' ? 'blocked' : error === 'audio-capture' ? 'nomic' : 'unavailable'
+      );
     });
     recognizer.addEventListener('end', () => {
       // Browsers end a session after a silence. While the wait lasts, keep listening.
@@ -758,6 +768,43 @@ export class StepwiseStepsElement extends UIElement {
     } catch {
       this.#recognizer = null;
     }
+  }
+
+  /** Voice could not start. Switch it off, keep it off next time, and say why and what to do. */
+  #voiceFailed(reason: 'blocked' | 'nomic' | 'unavailable') {
+    this.#listenToken++;
+    this.#recognizer = null;
+    this.#setVoice(false, false);
+    try {
+      localStorage.setItem(VOICE_KEY, 'off');
+    } catch {
+      /* not kept */
+    }
+    const [short, hint] =
+      reason === 'blocked'
+        ? [
+            this.#translate('stepwise.voice.blocked', 'Mic blocked'),
+            this.#translate(
+              'stepwise.voice.blocked.hint',
+              'Allow the microphone for this site, or open this page in Chrome or Safari.'
+            ),
+          ]
+        : reason === 'nomic'
+          ? [
+              this.#translate('stepwise.voice.nomic', 'No microphone'),
+              this.#translate('stepwise.voice.nomic.hint', 'No microphone was found. Next step and the space bar still work.'),
+            ]
+          : [
+              this.#translate('stepwise.voice.unavailable', 'Voice unavailable'),
+              this.#translate('stepwise.voice.unavailable.hint', 'This browser can’t recognise speech right now. Next step and the space bar still work.'),
+            ];
+    this.#root?.setAttribute('data-step-voice', 'blocked');
+    const label = this.#parts['voice-label'];
+    if (label) label.textContent = short;
+    // The explanation takes the wait line's place for the rest of this wait.
+    this.#clearPatience();
+    if (this.#parts.patience) this.#parts.patience.textContent = hint;
+    this.#say(`${short}. ${hint}`);
   }
 
   #stopListening() {

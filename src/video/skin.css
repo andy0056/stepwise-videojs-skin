@@ -849,6 +849,12 @@
        itself says which step is next, so the tag steps aside while it is up. */
     .stepwise .sw-wait-label { display: none; }
     .stepwise[data-steps][data-step-waiting] .sw-tag { display: none; }
+    /* A voice failure has to be read: the heading row comes back, carrying only the explanation. */
+    .stepwise[data-step-voice="blocked"] .sw-wait-label { display: flex; }
+    .stepwise[data-step-voice="blocked"] .sw-wait-label [data-step="done"] { display: none; }
+    .stepwise[data-step-voice="blocked"] .sw-wait-label { margin-block: 0; }
+    .stepwise[data-step-voice="blocked"] .sw-wait-patience { font-size: calc(var(--media-spacing) * 3); line-height: 1.25; }
+    .stepwise[data-step-voice="blocked"] :is(.sw-wait-button, .sw-voice) { min-height: calc(var(--media-spacing) * 12); height: calc(var(--media-spacing) * 12); }
     .stepwise .sw-wait-next-title { font-size: calc(var(--media-spacing) * 3.75); }
     /* Elapsed time only; the bar shows how much is left. */
     .stepwise .sw-time .media-time-separator,
