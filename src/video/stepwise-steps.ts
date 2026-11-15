@@ -25,6 +25,7 @@
  *   data-step-waiting        waiting at the end of a step (value "end" after the last one)
  *   data-step-wait="on|off"  the switch
  *   data-step-slow           the step is being repeated at half speed
+ *   data-step-hint           the wait line is carrying something that must be read (a list, a failure)
  *   data-step-voice="off|on|listening|heard|blocked"   spoken commands (absent where speech recognition is missing)
  *
  * Voice. Where the browser can recognise speech, the plate carries a "Say next" button. It is off
@@ -32,7 +33,9 @@
  * is paused, so the video's own sound can never trigger it, and it is closed the moment the wait ends.
  * Recognition runs on the device where the browser offers that; otherwise the browser's own speech
  * service is used. Turning voice on asks for the microphone in the ordinary way; if the browser or the
- * page it is embedded in refuses, the plate says so and says what to do. Words: "next" (also "continue", "go on", "ready"), "repeat" (also "again"),
+ * page it is embedded in refuses, the plate says so and says what to do. Commands: "next", "repeat",
+ * "slower" (or "half speed"), "normal speed", "back", "step three", "start again", "mute", "sound on",
+ * "captions on", "captions off", "stop listening", and "what can I say" for the list. In short: "next" (also "continue", "go on", "ready"), "repeat" (also "again"),
  * "slower", and at the end "start again".
  *
  * Keys, when the player has focus: N next step, B back a step, R repeat this step, S repeat it
@@ -98,6 +101,21 @@ interface RecognizerClass {
 interface RecognitionResultEvent extends Event {
   resultIndex: number;
   results: ArrayLike<ArrayLike<{ transcript: string }>>;
+}
+
+/** Step numbers as words. Sound-alikes ("to", "for") are left out on purpose: "next step for me" is not step 4. */
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+  nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, twenty: 20,
+};
+
+interface Command {
+  /** What to show as heard. */
+  word: string;
+  run: () => void;
+  /** The wait goes on afterwards, and so does listening. */
+  stay?: boolean;
 }
 
 function recognizerClass(): RecognizerClass | null {
@@ -262,6 +280,17 @@ export class StepwiseStepsElement extends UIElement {
     const target = media.currentTime - current.start > BACK_THRESHOLD || at === 0 ? current : this.#steps[at - 1];
     this.#leaveWait();
     this.#seek(target.start);
+  }
+
+  /** Play from the start of the step at `index` (0-based). */
+  goTo(index: number): void {
+    const media = this.#media;
+    const step = this.#steps[index];
+    if (!media || !step) return;
+    this.#leaveWait();
+    this.#setSlow(-1);
+    this.#seek(step.start);
+    void Promise.resolve(media.play()).catch(() => undefined);
   }
 
   /** Play this step again from its start; `slow` plays it at half speed, for this once. */
@@ -589,6 +618,7 @@ export class StepwiseStepsElement extends UIElement {
     this.#ended = false;
     this.#clearPatience();
     this.#stopListening();
+    root?.removeAttribute('data-step-hint');
     root?.removeAttribute('data-step-waiting');
     if (plate) plate.inert = true;
     this.#releaseLock?.();
@@ -622,6 +652,7 @@ export class StepwiseStepsElement extends UIElement {
   /** A line under the heading that changes as the wait goes on. Company, not a countdown. */
   #startPatience() {
     this.#clearPatience();
+    this.#root?.removeAttribute('data-step-hint');
     const line = this.#parts.patience;
     if (!line) return;
     if (this.#ended) {
@@ -632,7 +663,7 @@ export class StepwiseStepsElement extends UIElement {
       const show = () => {
         line.textContent =
           after === 0 && this.#voice
-            ? this.#translate('stepwise.patience.voice', 'Say “next” when you’re ready.')
+            ? this.#translate('stepwise.patience.voice', 'Say “next”, “repeat”, “slower” or “back”.')
             : this.#translate(key, fallback);
       };
       if (after === 0) show();
@@ -732,17 +763,29 @@ export class StepwiseStepsElement extends UIElement {
         if (announce) this.#say(this.#translate('stepwise.voice.listening', 'Listening'));
       }
     });
+    let handled = -1; // results up to this index have already produced a command
     recognizer.addEventListener('result', (event) => {
       if (token !== this.#listenToken || acted) return;
       const { results, resultIndex } = event as RecognitionResultEvent;
       let said = '';
-      for (let i = resultIndex; i < results.length; i++) {
+      const from = Math.max(resultIndex, handled + 1);
+      for (let i = from; i < results.length; i++) {
         for (let j = 0; j < results[i].length; j++) said += ` ${results[i][j].transcript}`;
       }
-      const command = this.#command(said.toLowerCase());
+      const command = said ? this.#command(said.toLowerCase()) : null;
       if (!command) return;
-      acted = true;
+      handled = results.length - 1;
       this.#voiceState('heard', command.word);
+      clearTimeout(this.#heardTimer);
+      if (command.stay) {
+        // Something that does not end the wait: do it, show what was heard, and go on listening.
+        command.run();
+        this.#heardTimer = window.setTimeout(() => {
+          if (token === this.#listenToken) this.#voiceState('listening');
+        }, 1400);
+        return;
+      }
+      acted = true;
       // Long enough to read what was heard, short enough to feel immediate.
       this.#heardTimer = window.setTimeout(command.run, 350);
     });
@@ -802,8 +845,7 @@ export class StepwiseStepsElement extends UIElement {
     const label = this.#parts['voice-label'];
     if (label) label.textContent = short;
     // The explanation takes the wait line's place for the rest of this wait.
-    this.#clearPatience();
-    if (this.#parts.patience) this.#parts.patience.textContent = hint;
+    this.#showHint(hint);
     this.#say(`${short}. ${hint}`);
   }
 
@@ -820,25 +862,98 @@ export class StepwiseStepsElement extends UIElement {
     if (this.#voice) this.#voiceState('on');
   }
 
-  /** The command in what was said, if any. "Slower" is checked first: "repeat it slower" means slower. */
-  #command(said: string): { word: string; run: () => void } | null {
+  /**
+   * The command in what was said, if any. Order matters where phrases overlap: "go back to step two"
+   * is a step number, "start again" is not "again", "repeat it slower" is slower.
+   */
+  #command(said: string): Command | null {
     const has = (key: string, fallback: string) => {
       const words = this.#translate(key, fallback).split('|');
-      return words.find((word) => new RegExp(`(^|[^\\p{L}])${word.trim()}([^\\p{L}]|$)`, 'u').test(said))?.trim();
+      return words.find((word) => new RegExp(`(^|[^\\p{L}\\d])${word.trim()}([^\\p{L}\\d]|$)`, 'u').test(said))?.trim();
     };
-    const slower = has('stepwise.voice.words.slower', 'slower|slowly|slow');
-    if (slower) return { word: slower, run: () => this.repeat(true) };
-    if (this.#ended) {
-      const restart = has('stepwise.voice.words.restart', 'start again|start over|restart|from the top');
-      if (restart) return { word: restart, run: () => this.continue() };
+    const at = this.#waiting;
+
+    const help = has('stepwise.voice.words.help', 'what can i say|what can you do|help|commands');
+    if (help) return { word: help, stay: true, run: () => this.#showHint(this.#translate('stepwise.voice.list', 'Say: next · repeat · slower · back · step 3 · start again · mute · captions on · stop listening')) };
+
+    const quiet = has('stepwise.voice.words.stop', 'stop listening|voice off|mic off|microphone off');
+    if (quiet) return { word: quiet, stay: true, run: () => this.#setVoice(false, true) };
+
+    // "step three", "step 3", "go to step number two".
+    const stepWord = this.#translate('stepwise.voice.words.step', 'step');
+    const numbered = new RegExp(`(^|[^\\p{L}])${stepWord}\\s+(?:number\\s+)?(\\d{1,2}|[\\p{L}]+)`, 'u').exec(said);
+    if (numbered) {
+      const n = /^\d+$/.test(numbered[2]) ? Number(numbered[2]) : NUMBER_WORDS[numbered[2]];
+      if (n && n <= this.#steps.length) return { word: `${stepWord} ${n}`, run: () => this.goTo(n - 1) };
+      if (n) return { word: `${stepWord} ${n}?`, stay: true, run: () => this.#showHint(this.#format('stepwise.voice.nostep', 'There are {n} steps.', this.#steps.length)) };
     }
+
+    const slower = has('stepwise.voice.words.slower', 'slower|slowly|slow|half speed|half the speed|50%|50 percent|fifty percent');
+    if (slower) return { word: slower, run: () => this.repeat(true) };
+
+    const normal = has('stepwise.voice.words.normal', 'normal speed|full speed|regular speed');
+    if (normal) {
+      return {
+        word: normal,
+        run: () => {
+          this.#restoreRate = 1;
+          if (this.#media) this.#media.playbackRate = 1;
+          this.repeat();
+        },
+      };
+    }
+
+    const restart = has('stepwise.voice.words.restart', 'start again|start over|restart|from the top|from the beginning');
+    if (restart) return { word: restart, run: () => this.goTo(0) };
+
+    const back = has('stepwise.voice.words.back', 'back|previous');
+    if (back) return { word: back, run: () => this.goTo(Math.max(at - 1, 0)) };
+
     const repeat = has('stepwise.voice.words.repeat', 'repeat|again|once more');
     if (repeat) return { word: repeat, run: () => this.repeat() };
+
+    const unmute = has('stepwise.voice.words.unmute', 'unmute|sound on');
+    if (unmute) return { word: unmute, stay: true, run: () => this.#setMuted(false) };
+    const mute = has('stepwise.voice.words.mute', 'mute|sound off|silence');
+    if (mute) return { word: mute, stay: true, run: () => this.#setMuted(true) };
+
+    const captionsOff = has('stepwise.voice.words.captions.off', 'captions off|subtitles off|hide captions|hide subtitles|no captions');
+    if (captionsOff) return { word: captionsOff, stay: true, run: () => this.#setCaptions(false) };
+    const captionsOn = has('stepwise.voice.words.captions.on', 'captions on|subtitles on|show captions|show subtitles|captions|subtitles');
+    if (captionsOn) return { word: captionsOn, stay: true, run: () => this.#setCaptions(true) };
+
     if (!this.#ended) {
-      const next = has('stepwise.voice.words.next', 'next|continue|go on|carry on|ready');
+      const next = has('stepwise.voice.words.next', 'next|continue|go on|carry on');
       if (next) return { word: next, run: () => this.continue() };
     }
     return null;
+  }
+
+  #setMuted(muted: boolean) {
+    const media = this.#media as (MediaLike & { muted?: boolean }) | null;
+    if (!media) return;
+    media.muted = muted;
+    this.#say(muted ? this.#translate('stepwise.status.muted', 'Muted') : this.#translate('stepwise.status.unmuted', 'Sound on'));
+  }
+
+  /** Captions go through the player's own button, so its state and the menu stay in step. */
+  #setCaptions(on: boolean) {
+    const button = this.#root?.querySelector('media-captions-button, .media-captions-button') as HTMLElement | null;
+    const unavailable = !button || button.hasAttribute('data-hidden') || /unavailable|unsupported/.test(button.getAttribute('data-availability') ?? '');
+    if (unavailable) {
+      this.#showHint(this.#translate('stepwise.voice.nocaptions', 'This video has no captions.'));
+      return;
+    }
+    if (button.hasAttribute('data-active') !== on) button.click();
+    this.#say(on ? this.#translate('stepwise.status.captions.on', 'Captions on') : this.#translate('stepwise.status.captions.off', 'Captions off'));
+  }
+
+  /** Put something that must be read on the wait line, in place of the small talk. */
+  #showHint(text: string) {
+    this.#clearPatience();
+    this.#root?.toggleAttribute('data-step-hint', true);
+    if (this.#parts.patience) this.#parts.patience.textContent = text;
+    this.#say(text);
   }
 
   // ---------------------------------------------------------------- keys

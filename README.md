@@ -58,7 +58,24 @@ Fold the corners in
 - Off by default, and shown only where `SpeechRecognition` exists. Browsers without it (Firefox today) never see the button.
 - The microphone opens when the wait plate appears and closes when it goes. The video is paused for that whole time, so its own sound cannot trigger a command.
 - If the browser reports an on-device model for the language, recognition is asked to stay on the device (`processLocally`). Otherwise the browser's own speech service is used. The skin never receives audio; it reads the recognised words and matches a short list.
-- Words: "next", "continue", "go on", "carry on", "ready"; "repeat", "again", "once more"; "slower", "slowly"; and after the last step "start again", "restart", "from the top".
+- Commands, all spoken while the player waits:
+
+  | Say | It does |
+  | --- | --- |
+  | "next", "continue", "go on" | Plays the next step |
+  | "repeat", "again" | Plays this step again |
+  | "slower", "half speed", "50% slower" | Plays this step again at half speed |
+  | "normal speed" | Plays this step again at normal speed |
+  | "back", "previous" | Plays the step before |
+  | "step three", "step 3" | Plays that step |
+  | "start again", "from the top" | Plays from step 1 |
+  | "mute", "sound on" | Mutes or restores the sound, and keeps waiting |
+  | "captions on", "captions off" | Turns captions on or off, and keeps waiting |
+  | "stop listening" | Turns voice off |
+  | "what can I say", "help" | Shows the list on the plate |
+
+- Wording that sounds like a command but is not one is left alone: "I'm not ready" does nothing, and "next step for me" is next, not step four.
+- Full screen cannot be a spoken command: browsers allow it only after a real click or key press.
 - Turning voice on asks for the microphone with the browser's own prompt. If the browser, the operating system or an embedding page refuses, voice turns itself off, stays off on the next visit, and the plate says what happened and what to do. A missing microphone and a missing speech service each get their own message.
 - `<stepwise-steps voice-lang="en-GB">` sets the recognition language (default `en-US`). The command words are translatable strings.
 
