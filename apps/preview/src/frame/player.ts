@@ -27,7 +27,7 @@ const CLIPS: Clip[] = [
     // Anirudh explains the player in five steps. Each step ends on a held pose: that is the frame the wait rests on.
     key: 'intro',
     title: 'Meet Stepwise',
-    playbackId: '',
+    playbackId: '5UpVxbt734HzKG7Sd76QC4fcYTXzkeFCBszL02WToJ7s',
     chapters: './stepwise-intro-chapters.vtt',
     captions: './stepwise-intro.vtt',
     poster: 3.2,
